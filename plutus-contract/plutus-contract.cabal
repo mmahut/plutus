@@ -88,6 +88,10 @@ library
         Wallet.Types
         Control.Monad.Freer.Extras
         Control.Monad.Freer.Log
+        Plutus.Trace
+        Plutus.Trace.Playground
+        Plutus.Trace.Emulator
+        Plutus.Trace.Types
     hs-source-dirs: src
     build-depends:
         plutus-ledger -any,
@@ -122,7 +126,8 @@ library
         cryptonite >=0.25,
         fingertree -any,
         uuid -any,
-        aeson-pretty -any
+        aeson-pretty -any,
+        unordered-containers -any
 
     if !(impl(ghcjs) || os(ghcjs))
         exposed-modules:
