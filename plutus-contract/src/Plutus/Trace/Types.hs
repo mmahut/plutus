@@ -138,6 +138,11 @@ runThreads e = do
         let initialThread = EmThread{emContinuation = k', emThreadId = initialThreadId}
         in loop $ enqueue (suspend High initialThread) initialState
 
+-- TODO:
+-- 1. The sleep argument should always include a priority and only maybe a syscall
+-- 2. Implement broadcast / message
+-- 3. Put the scheduler in its own module, type parameter for threads
+
 -- | Run the threads that are scheduled in a 'SchedulerState' to completion.
 loop :: SchedulerState effs systemEvent -> Eff effs ()
 loop s = do
