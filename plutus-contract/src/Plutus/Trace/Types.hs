@@ -157,16 +157,22 @@ loop s = do
             case result of
                 Done _ -> loop schedulerState
                 Continue WithPriority{_priority, _thread=sysCall} k -> do
-                    let thisThread = suspend _priority EmThread{_threadId=_threadId, _continuation=k}
-                        updatedState = case sysCall of
-                            Fork newThread ->
-                                let (schedulerState', tid) = nextThreadId schedulerState
-                                in enqueue (newThread tid) schedulerState'
-                            Suspend -> schedulerState
-                            Broadcast msg -> schedulerState & mailboxes . traversed %~ (|> msg)
-                            Message t msg -> schedulerState & mailboxes . at t . non mempty %~ (|> msg)
-                    loop (updatedState & enqueue thisThread)
+                    let thisThread = suspend _priority EmThread{_threadId=_threadId, _continuation=k}                    
+                    loop (schedulerState & handleSysCall sysCall & enqueue thisThread)
         NoMoreThreads -> pure ()
+
+handleSysCall ::
+    Eq systemEvent
+    => SysCall effs systemEvent
+    -> SchedulerState effs systemEvent
+    -> SchedulerState effs systemEvent
+handleSysCall sysCall schedulerState = case sysCall of
+    Fork newThread ->
+        let (schedulerState', tid) = nextThreadId schedulerState
+        in enqueue (newThread tid) schedulerState'
+    Suspend -> schedulerState
+    Broadcast msg -> schedulerState & mailboxes . traversed %~ (|> msg)
+    Message t msg -> schedulerState & mailboxes . at t . non mempty %~ (|> msg)
 
 nextThreadId ::
     SchedulerState effs systemEvent -> (SchedulerState effs systemEvent, ThreadId)
