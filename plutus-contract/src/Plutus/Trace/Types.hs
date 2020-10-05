@@ -20,10 +20,11 @@ module Plutus.Trace.Types
 
     -- * Handling the 'Simulator' effect
     SimulatorInterpreter (..),
-    SuspendedThread (..),
     EmThread (..),
     Priority(..),
-    SimulatorSystemCall(..),
+    WithPriority(..),
+    SimulatorSystemCall,
+    SuspendedThread,
     handleEmulator,
     runSimulator,
 
@@ -44,13 +45,13 @@ import qualified Data.Sequence                 as Seq
 import           GHC.Generics                  (Generic)
 
 class SimulatorBackend a where
-  type LocalAction a :: * -> *
-  type GlobalAction a :: * -> *
-  type Agent a
+    type LocalAction a :: * -> *
+    type GlobalAction a :: * -> *
+    type Agent a
 
 data Simulator a b where
-  RunLocal :: SimulatorBackend a => Agent a -> LocalAction a b -> Simulator a b
-  RunGlobal :: SimulatorBackend a => GlobalAction a b -> Simulator a b
+    RunLocal :: SimulatorBackend a => Agent a -> LocalAction a b -> Simulator a b
+    RunGlobal :: SimulatorBackend a => GlobalAction a b -> Simulator a b
 
 newtype ThreadId = ThreadId { unThreadId :: Int }
     deriving stock (Eq, Ord, Show, Generic)
@@ -59,47 +60,50 @@ newtype ThreadId = ThreadId { unThreadId :: Int }
 initialThreadId :: ThreadId
 initialThreadId = ThreadId 0
 
+data Priority = Low | High | Sleeping
+    deriving stock (Eq, Ord, Show, Generic)
+
 -- | The "system calls" we can make when interpreting a 'Simulator' action.
-data SimulatorSystemCall effs systemEvent
+data SysCall effs systemEvent
     = Fork (ThreadId -> SuspendedThread effs systemEvent)
-    | Suspend Priority -- ^ Yield to other running threads
+    | Suspend
     | Broadcast systemEvent
     | Message ThreadId systemEvent
+
+-- | A suspended thread with a 'Priority'.
+data WithPriority t
+    = WithPriority
+        { _priority :: Priority
+        , _thread   :: t
+        }
+
+type SimulatorSystemCall effs systemEvent = WithPriority (SysCall effs systemEvent)
+type SuspendedThread effs systemEvent = WithPriority (EmThread effs systemEvent)
 
 -- | Thread that can be run by the scheduler
 data EmThread effs systemEvent =
     EmThread
-        { emContinuation :: Maybe systemEvent -> Eff effs (Status effs (SimulatorSystemCall effs systemEvent) (Maybe systemEvent) ())
-        , emThreadId     :: ThreadId
+        { _continuation :: Maybe systemEvent -> Eff effs (Status effs (SimulatorSystemCall effs systemEvent) (Maybe systemEvent) ())
+        , _threadId     :: ThreadId
         }
-
--- | Suspended 'EmThread' with information about when it intends to bewoken
---   up again.
-data SuspendedThread effs systemEvent
-    = SuspendedThread
-        { stPrio   :: Priority,
-            stThread :: EmThread effs systemEvent
-        }
-
-data Priority = Low | High | Sleeping
 
 -- | Scheduler state consisting of three queues of suspended threads, one for each
 --   'Priority' level.
 data SchedulerState effs systemEvent
     = SchedulerState
-        { _HighPrio  :: Seq (EmThread effs systemEvent)
-        , _LowPrio   :: Seq (EmThread effs systemEvent)
-        , _Sleeping  :: Seq (EmThread effs systemEvent)
-        , _ThreadId  :: ThreadId
-        , _Mailboxes :: HashMap ThreadId (Seq systemEvent)
+        { _highPrio  :: Seq (EmThread effs systemEvent)
+        , _lowPrio   :: Seq (EmThread effs systemEvent)
+        , _sleeping  :: Seq (EmThread effs systemEvent)
+        , _lastThreadId  :: ThreadId
+        , _mailboxes :: HashMap ThreadId (Seq systemEvent)
         }
 
 makeLenses ''SchedulerState
 
 data SimulatorInterpreter a effs systemEvent
     = SimulatorInterpreter
-        { interpRunLocal     :: forall b. Agent a -> LocalAction a b -> Eff effs (b, ThreadId -> SuspendedThread effs systemEvent)
-        , interpRunGlobal    :: forall b. GlobalAction a b -> Eff effs (b, ThreadId -> SuspendedThread effs systemEvent)
+        { _runLocal     :: forall b. Agent a -> LocalAction a b -> Eff effs (b, ThreadId -> SuspendedThread effs systemEvent)
+        , _runGlobal    :: forall b. GlobalAction a b -> Eff effs (b, ThreadId -> SuspendedThread effs systemEvent)
         }
 
 handleEmulator ::
@@ -107,25 +111,21 @@ handleEmulator ::
     SimulatorInterpreter a effs systemEvent
     -> Simulator a
     ~> Eff (Yield (SimulatorSystemCall effs systemEvent) (Maybe systemEvent) ': effs)
-handleEmulator SimulatorInterpreter {interpRunGlobal, interpRunLocal} = \case
+handleEmulator SimulatorInterpreter {_runGlobal, _runLocal} = \case
     RunLocal wllt localAction -> do
-        (b, thread) <- raise $ interpRunLocal wllt localAction
-        _ <- yield @(SimulatorSystemCall effs systemEvent) @(Maybe systemEvent) (Fork thread) id
+        (b, thread) <- raise $ _runLocal wllt localAction
+        _ <- yield @(SimulatorSystemCall effs systemEvent) @(Maybe systemEvent) (WithPriority Low $ Fork thread) id
         pure b
     RunGlobal globalAction -> do
-        (b, thread) <- raise $ interpRunGlobal globalAction
-        _ <- yield @(SimulatorSystemCall effs systemEvent) @(Maybe systemEvent) (Fork thread) id
+        (b, thread) <- raise $ _runGlobal globalAction
+        _ <- yield @(SimulatorSystemCall effs systemEvent) @(Maybe systemEvent) (WithPriority Low $ Fork thread) id
         pure b
 
 suspend ::
     Priority
     -> EmThread effs systemEvent
     -> SuspendedThread effs systemEvent
-suspend prio thread =
-    SuspendedThread
-    { stPrio = prio
-    , stThread = thread
-    }
+suspend = WithPriority
 
 runSimulator ::
     forall a effs systemEvent.
@@ -145,45 +145,42 @@ runThreads e = do
     case k of
         Done () -> pure ()
         Continue _ k' ->
-            let initialThread = EmThread{emContinuation = k', emThreadId = initialThreadId}
+            let initialThread = EmThread{_continuation = k', _threadId = initialThreadId}
             in loop $ enqueue (suspend High initialThread) initialState
-
--- TODO:
--- 1. The sleep argument should always include a priority and only maybe a syscall
--- 3. Put the scheduler in its own module, type parameter for threads
 
 -- | Run the threads that are scheduled in a 'SchedulerState' to completion.
 loop :: Eq systemEvent => SchedulerState effs systemEvent -> Eff effs ()
 loop s = do
     case dequeue s of
-        AThread EmThread{emContinuation, emThreadId} event newState -> do
-            result <- emContinuation event
+        AThread EmThread{_continuation, _threadId} event schedulerState -> do
+            result <- _continuation event
             case result of
-                Done _ -> loop newState
-                Continue sysCall k -> do
-                    let newState'' = case sysCall of
-                            Fork thread' ->
-                                let (newState', tid) = nextThreadId newState
-                                in enqueue (thread' tid) $ enqueue (suspend High EmThread{emThreadId=emThreadId, emContinuation=k}) $ newState'
-                            Suspend prio -> enqueue (suspend prio EmThread{emThreadId=emThreadId, emContinuation=k}) newState
-                            Broadcast msg -> s & mailboxes . traversed %~ (|> msg)
-                            Message t msg -> s & mailboxes . at t . non mempty %~ (|> msg)
-                    loop newState''
+                Done _ -> loop schedulerState
+                Continue WithPriority{_priority, _thread=sysCall} k -> do
+                    let thisThread = suspend _priority EmThread{_threadId=_threadId, _continuation=k}
+                        updatedState = case sysCall of
+                            Fork newThread ->
+                                let (schedulerState', tid) = nextThreadId schedulerState
+                                in enqueue (newThread tid) schedulerState'
+                            Suspend -> schedulerState
+                            Broadcast msg -> schedulerState & mailboxes . traversed %~ (|> msg)
+                            Message t msg -> schedulerState & mailboxes . at t . non mempty %~ (|> msg)
+                    loop (updatedState & enqueue thisThread)
         NoMoreThreads -> pure ()
 
 nextThreadId ::
     SchedulerState effs systemEvent -> (SchedulerState effs systemEvent, ThreadId)
-nextThreadId s = (s & threadId %~ ThreadId . succ . unThreadId, s ^. threadId)
+nextThreadId s = (s & lastThreadId %~ ThreadId . succ . unThreadId, s ^. lastThreadId)
 
 initialState :: SchedulerState effs systemEvent
 initialState = SchedulerState Seq.empty Seq.empty Seq.empty (ThreadId 1) HashMap.empty
 
 enqueue :: SuspendedThread effs systemEvent -> SchedulerState effs systemEvent -> SchedulerState effs systemEvent
-enqueue SuspendedThread {stPrio, stThread} s =
-    case stPrio of
-        High     -> s & highPrio %~ (|> stThread)
-        Low      -> s & lowPrio %~ (|> stThread)
-        Sleeping -> s & sleeping %~ (|> stThread)
+enqueue WithPriority {_priority, _thread} s =
+    case _priority of
+        High     -> s & highPrio %~ (|> _thread)
+        Low      -> s & lowPrio %~ (|> _thread)
+        Sleeping -> s & sleeping %~ (|> _thread)
 
 -- | Result of calling 'dequeue'. Either a thread that is ready to receive a message,
 --   or no more threads.
@@ -194,7 +191,7 @@ data SchedulerDQResult effs systemEvent
 dequeue :: SchedulerState effs systemEvent -> SchedulerDQResult effs systemEvent
 dequeue s = case dequeueThread s of
     Nothing -> NoMoreThreads
-    Just (s', thread) -> case dequeueMessage s' (emThreadId thread) of
+    Just (s', thread) -> case dequeueMessage s' (_threadId thread) of
         Nothing       -> AThread thread Nothing s'
         Just (s'', m) -> AThread thread (Just m) s''
 
