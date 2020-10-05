@@ -89,8 +89,9 @@ library
         Control.Monad.Freer.Extras
         Control.Monad.Freer.Log
         Plutus.Trace
-        Plutus.Trace.Playground
         Plutus.Trace.Emulator
+        Plutus.Trace.Playground
+        Plutus.Trace.Scheduler
         Plutus.Trace.Types
     hs-source-dirs: src
     build-depends:
