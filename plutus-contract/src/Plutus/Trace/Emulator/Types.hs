@@ -17,22 +17,22 @@ module Plutus.Trace.Emulator.Types(
     , ContractHandle(..)
     ) where
 
-import Control.Lens
-import Data.Map (Map)
+import           Control.Lens
 import           Control.Monad.Freer
 import           Control.Monad.Freer.Coroutine
-import           Control.Monad.Freer.Reader     (Reader)
-import           Data.Proxy                     (Proxy (..))
-import qualified Data.Aeson                     as JSON
-import           Ledger.Value                   (Value)
-import           Ledger.Slot                    (Slot)
-import           Language.Plutus.Contract       (type (.\/), BlockchainActions, Contract, Endpoint, HasEndpoint)
-import           Wallet.Types                   (ContractInstanceId)
-import           Wallet.Emulator.Wallet         (Wallet (..))
-import           Plutus.Trace.Scheduler         (Priority (..), SystemCall (..), SuspendedThread, SysCall (..),
-                                                 ThreadId, mkSysCall, mkThread)
-import Data.Void (Void)
-import           Plutus.Trace.Types (SimulatorBackend(..), Simulator(..), )
+import           Control.Monad.Freer.Reader    (Reader)
+import qualified Data.Aeson                    as JSON
+import           Data.Map                      (Map)
+import           Data.Proxy                    (Proxy (..))
+import           Data.Void                     (Void)
+import           Language.Plutus.Contract      (type (.\/), BlockchainActions, Contract, Endpoint, HasEndpoint)
+import           Ledger.Slot                   (Slot)
+import           Ledger.Value                  (Value)
+import           Plutus.Trace.Scheduler        (Priority (..), SuspendedThread, SysCall (..), SystemCall (..), ThreadId,
+                                                mkSysCall, mkThread)
+import           Plutus.Trace.Types            (Simulator (..), SimulatorBackend (..))
+import           Wallet.Emulator.Wallet        (Wallet (..))
+import           Wallet.Types                  (ContractInstanceId)
 
 data EmulatorEvent =
     BlockAdded -- [Tx]

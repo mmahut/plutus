@@ -75,7 +75,7 @@ data EmThread effs systemEvent =
         , _threadId     :: ThreadId
         }
 
--- | Scheduler state consisting of three queues of suspended threads, one for 
+-- | Scheduler state consisting of three queues of suspended threads, one for
 --   each 'Priority' level.
 data SchedulerState effs systemEvent
     = SchedulerState

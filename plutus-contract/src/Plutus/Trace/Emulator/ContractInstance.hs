@@ -13,27 +13,28 @@ module Plutus.Trace.Emulator.ContractInstance(
     contractThread
     ) where
 
-import Control.Lens
-import Plutus.Trace.Emulator.Types (EmulatorAgentThreadEffs, EmulatorState, ContractHandle(..), EmulatorEvent(..), instanceIdThreads)
+import           Control.Lens
 import           Control.Monad.Freer
-import           Control.Monad.Freer.Reader     (Reader, ask, runReader)
-import           Control.Monad.Freer.State      (State, modify, evalState, gets)
-import           Plutus.Trace.Scheduler         (Priority (..), SystemCall (..), SuspendedThread, SysCall (..),
-                                                 ThreadId, mkSysCall, mkThread)
-import           Wallet.Types                   (ContractInstanceId)
-import qualified Language.Plutus.Contract.Effects.ExposeEndpoint   as Endpoint
-import Data.Foldable (traverse_)
-import Language.Plutus.Contract.Trace.RequestHandler (RequestHandler(..), tryHandler, wrapHandler)
-import           Language.Plutus.Contract                          (Contract (..), HasAwaitSlot, HasTxConfirmation,
-                                                                    HasUtxoAt, HasWatchAddress, HasWriteTx, mapError)
-import qualified Language.Plutus.Contract.Types                    as Contract.Types
-import           Language.Plutus.Contract.Types                    (ResumableResult (..))
-import           Language.Plutus.Contract.Schema                   (Event (..), Handlers (..), Input, Output)
-import Data.Sequence (Seq)
-import           Language.Plutus.Contract.Resumable                (Request (..), Requests (..), Response (..))
-import qualified Language.Plutus.Contract.Resumable                as State
-import Wallet.Emulator.MultiAgent (EmulatedWalletEffects, MultiAgentEffect, walletAction)
-import Wallet.Emulator.Wallet (Wallet)
+import           Control.Monad.Freer.Reader                      (Reader, ask, runReader)
+import           Control.Monad.Freer.State                       (State, evalState, gets, modify)
+import           Data.Foldable                                   (traverse_)
+import           Data.Sequence                                   (Seq)
+import           Language.Plutus.Contract                        (Contract (..), HasAwaitSlot, HasTxConfirmation,
+                                                                  HasUtxoAt, HasWatchAddress, HasWriteTx, mapError)
+import qualified Language.Plutus.Contract.Effects.ExposeEndpoint as Endpoint
+import           Language.Plutus.Contract.Resumable              (Request (..), Requests (..), Response (..))
+import qualified Language.Plutus.Contract.Resumable              as State
+import           Language.Plutus.Contract.Schema                 (Event (..), Handlers (..), Input, Output)
+import           Language.Plutus.Contract.Trace.RequestHandler   (RequestHandler (..), tryHandler, wrapHandler)
+import           Language.Plutus.Contract.Types                  (ResumableResult (..))
+import qualified Language.Plutus.Contract.Types                  as Contract.Types
+import           Plutus.Trace.Emulator.Types                     (ContractHandle (..), EmulatorAgentThreadEffs,
+                                                                  EmulatorEvent (..), EmulatorState, instanceIdThreads)
+import           Plutus.Trace.Scheduler                          (Priority (..), SuspendedThread, SysCall (..),
+                                                                  SystemCall (..), ThreadId, mkSysCall, mkThread)
+import           Wallet.Emulator.MultiAgent                      (EmulatedWalletEffects, MultiAgentEffect, walletAction)
+import           Wallet.Emulator.Wallet                          (Wallet)
+import           Wallet.Types                                    (ContractInstanceId)
 
 -- | Effects available to threads that run in the context of specific
 --   agents (ie wallets)
@@ -49,7 +50,7 @@ contractThread :: forall s e effs.
 contractThread ContractHandle{chInstanceId, chContract} = do
     ask @ThreadId >>= registerInstance chInstanceId
     evalState (emptyInstanceState chContract) $ do
-        msg <- mkSysCall @effs @EmulatorEvent Low Suspend 
+        msg <- mkSysCall @effs @EmulatorEvent Low Suspend
         runInstance msg
 
 registerInstance :: forall effs.
