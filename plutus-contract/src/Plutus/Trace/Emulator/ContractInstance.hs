@@ -14,13 +14,16 @@ module Plutus.Trace.Emulator.ContractInstance(
     ) where
 
 import           Control.Lens
-import Control.Monad(void, guard)
-import qualified Data.Aeson.Types as JSON
-import qualified Data.Aeson.Parser as JSON
+import           Control.Monad                                   (guard, void)
 import           Control.Monad.Freer
 import           Control.Monad.Freer.Reader                      (Reader, ask, runReader)
 import           Control.Monad.Freer.State                       (State, evalState, gets, modify)
+import qualified Data.Aeson.Parser                               as JSON
+import qualified Data.Aeson.Types                                as JSON
 import           Data.Foldable                                   (traverse_)
+import qualified Data.Row.Extras                                 as V
+import qualified Data.Row.Internal                               as V
+import qualified Data.Row.Variants                               as V
 import           Data.Sequence                                   (Seq)
 import           Language.Plutus.Contract                        (Contract (..), HasAwaitSlot, HasTxConfirmation,
                                                                   HasUtxoAt, HasWatchAddress, HasWriteTx, mapError)
@@ -38,9 +41,6 @@ import           Plutus.Trace.Scheduler                          (Priority (..),
 import           Wallet.Emulator.MultiAgent                      (EmulatedWalletEffects, MultiAgentEffect, walletAction)
 import           Wallet.Emulator.Wallet                          (Wallet)
 import           Wallet.Types                                    (ContractInstanceId)
-import qualified Data.Row.Extras                                   as V
-import qualified Data.Row.Internal                                 as V
-import qualified Data.Row.Variants                                 as V
 
 -- | Effects available to threads that run in the context of specific
 --   agents (ie wallets)
@@ -107,7 +107,7 @@ runInstance event = do
                 guard $ (V.eraseWithLabels @V.Unconstrained1 (const ()) v) == (endpointName, ())
                 let result = JSON.fromJSON @(Event s) vl
                 case result of
-                    JSON.Error e -> error e -- FIXME
+                    JSON.Error e       -> error e -- FIXME
                     JSON.Success event -> pure event
             pure ()
         _ -> do
