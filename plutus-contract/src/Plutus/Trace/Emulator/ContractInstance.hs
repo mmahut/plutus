@@ -14,6 +14,9 @@ module Plutus.Trace.Emulator.ContractInstance(
     ) where
 
 import           Control.Lens
+import Control.Monad(void, guard)
+import qualified Data.Aeson.Types as JSON
+import qualified Data.Aeson.Parser as JSON
 import           Control.Monad.Freer
 import           Control.Monad.Freer.Reader                      (Reader, ask, runReader)
 import           Control.Monad.Freer.State                       (State, evalState, gets, modify)
@@ -35,6 +38,9 @@ import           Plutus.Trace.Scheduler                          (Priority (..),
 import           Wallet.Emulator.MultiAgent                      (EmulatedWalletEffects, MultiAgentEffect, walletAction)
 import           Wallet.Emulator.Wallet                          (Wallet)
 import           Wallet.Types                                    (ContractInstanceId)
+import qualified Data.Row.Extras                                   as V
+import qualified Data.Row.Internal                                 as V
+import qualified Data.Row.Variants                                 as V
 
 -- | Effects available to threads that run in the context of specific
 --   agents (ie wallets)
@@ -44,6 +50,10 @@ type ContractInstanceThreadEffs s e a effs =
 
 contractThread :: forall s e effs.
     ( Member (State EmulatorState) effs
+    , Member MultiAgentEffect effs
+    , V.Forall (Output s) V.Unconstrained1
+    , V.AllUniqueLabels (Input s)
+    , V.Forall (Input s) JSON.FromJSON
     )
     => ContractHandle s e
     -> Eff (EmulatorAgentThreadEffs effs) ()
@@ -79,17 +89,26 @@ emptyInstanceState con@(Contract c) =
 
 -- | Run an instance of a contract
 runInstance :: forall s e a effs.
-    Maybe EmulatorEvent
+    ( Member MultiAgentEffect effs
+    , V.Forall (Output s) V.Unconstrained1
+    , V.AllUniqueLabels (Input s)
+    , V.Forall (Input s) JSON.FromJSON
+    )
+    => Maybe EmulatorEvent
     -> Eff (ContractInstanceThreadEffs s e a effs) ()
 runInstance event = do
     case event of
-        Just (EndpointCall ep vl) -> do
+        Just (EndpointCall endpointName vl) -> do
             -- check if the endpoint is active and throw an error if it isn't
             hks <- getHooks @s @e @a
+            -- event <- decodeJSON @(Event s) -- ??
             -- TODO: What to do if endpoint is not active? -> Configurable (wait or error)
-            -- void $ respondToRequest @s @e @a $ RequestHandler $ \req -> do
-            --     guard (Endpoint.isActive @l req)
-            --     pure $ Endpoint.event @l ep
+            void $ respondToRequest @s @e @a $ RequestHandler $ \(Handlers v) -> do
+                guard $ (V.eraseWithLabels @V.Unconstrained1 (const ()) v) == (endpointName, ())
+                let result = JSON.fromJSON @(Event s) vl
+                case result of
+                    JSON.Error e -> error e -- FIXME
+                    JSON.Success event -> pure event
             pure ()
         _ -> do
             -- see if we can handle any requests
@@ -123,8 +142,7 @@ respondToRequest f = do
     ownWallet <- ask @Wallet
     (response :: Maybe (Response (Event s))) <- walletAction ownWallet $ tryHandler (wrapHandler f) hks
     traverse_ (addResponse @s @e @a) response
-    -- pure response
-    undefined
+    pure response
 
 addEventInstanceState :: forall s e a.
     Response (Event s)
