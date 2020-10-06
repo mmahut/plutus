@@ -90,6 +90,8 @@ library
         Control.Monad.Freer.Log
         Plutus.Trace
         Plutus.Trace.Emulator
+        Plutus.Trace.Emulator.ContractInstance
+        Plutus.Trace.Emulator.Types
         Plutus.Trace.Playground
         Plutus.Trace.Scheduler
         Plutus.Trace.Types

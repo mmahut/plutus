@@ -23,7 +23,7 @@ import           Control.Lens
 import           Control.Monad.Freer
 import           Control.Monad.Freer.Coroutine
 import           Control.Monad.Freer.Reader     (Reader, ask, runReader)
-import           Control.Monad.Freer.State      (State, modify)
+import           Control.Monad.Freer.State      (State, modify, evalState)
 import           Control.Monad.Freer.TH         (makeEffect)
 import qualified Data.Aeson                     as JSON
 import           Data.Map                       (Map)
@@ -32,74 +32,28 @@ import           Data.Void                      (Void)
 import           Language.Plutus.Contract       (type (.\/), BlockchainActions, Contract, Endpoint, HasEndpoint)
 import           Language.Plutus.Contract.Trace (handleBlockchainQueries)
 import           Ledger.Slot                    (Slot)
+import           Language.Plutus.Contract                          (Contract (..), HasAwaitSlot, HasTxConfirmation,
+                                                                    HasUtxoAt, HasWatchAddress, HasWriteTx, mapError)
+import           Language.Plutus.Contract.Resumable                (Request (..), Requests (..), Response (..))
+import qualified Language.Plutus.Contract.Types                    as Contract.Types
 import           Ledger.Value                   (Value)
-import           Plutus.Trace.Scheduler         (Priority (..), SimulatorSystemCall (..), SuspendedThread, SysCall (..),
+import qualified Language.Plutus.Contract.Resumable                as State
+import           Plutus.Trace.Scheduler         (Priority (..), SystemCall (..), SuspendedThread, SysCall (..),
                                                  ThreadId, mkSysCall, mkThread)
 import           Wallet.Effects
 import           Wallet.Emulator.Wallet         (Wallet (..))
 import           Wallet.Types                   (ContractInstanceId)
+import           Language.Plutus.Contract.Types                    (ResumableResult (..))
+import           Language.Plutus.Contract.Schema                   (Event (..), Handlers (..), Input, Output)
+import Data.Sequence (Seq)
 
 import           Plutus.Trace.Types
-
-data Emulator
-
--- | A reference to an installed contract in the emulator.
-data ContractHandle s e =
-    ContractHandle
-        { chContract   :: Contract s e ()
-        , chInstanceId :: ContractInstanceId
-        }
-
-data EmulatorLocal r where
-    ActivateContract :: Contract s e () -> EmulatorLocal (ContractHandle s e)
-    CallEndpointEm :: forall l ep s e. HasEndpoint l ep s => Proxy l -> ContractHandle s e -> ep -> EmulatorLocal ()
-    PayToWallet :: Wallet -> Value -> EmulatorLocal ()
-
-data EmulatorGlobal r where
-    WaitUntilSlot :: Slot -> EmulatorGlobal ()
-
-instance SimulatorBackend Emulator where
-    type LocalAction Emulator = EmulatorLocal
-    type GlobalAction Emulator = EmulatorGlobal
-    type Agent Emulator = Wallet
-
-type EmulatorTrace a = Eff '[Simulator Emulator] a
-
-activateContract :: forall s e. Wallet -> Contract s e () -> EmulatorTrace (ContractHandle s e)
-activateContract wallet = send @(Simulator Emulator) . RunLocal wallet . ActivateContract
-
-callEndpoint :: forall l ep s e. HasEndpoint l ep s => Wallet -> ContractHandle s e -> ep -> EmulatorTrace ()
-callEndpoint wallet hdl = send @(Simulator Emulator) . RunLocal wallet . CallEndpointEm (Proxy @l) hdl
-
-payToWallet :: Wallet -> Wallet -> Value -> EmulatorTrace ()
-payToWallet from_ to_ = send @(Simulator Emulator) . RunLocal from_ . PayToWallet to_
-
-waitUntilSlot :: Slot -> EmulatorTrace ()
-waitUntilSlot sl = send @(Simulator Emulator) $ RunGlobal (WaitUntilSlot sl)
-
-myContract :: Contract (BlockchainActions .\/ Endpoint "my endpoint" Int) Void ()
-myContract = undefined
-
-etrace :: EmulatorTrace ()
-etrace = do
-    runningCon <- activateContract (Wallet 1) myContract
-    callEndpoint @"my endpoint" (Wallet 1) runningCon 10
-
-data EmulatorEvent =
-    BlockAdded -- [Tx]
-    | NewSlot -- Slot
-    | EndpointCall String JSON.Value
+import Plutus.Trace.Emulator.ContractInstance ()
+import Plutus.Trace.Emulator.Types ()
 
 data ContractInstanceIdEff r where
     UniqueId :: ContractInstanceIdEff ContractInstanceId
 makeEffect ''ContractInstanceIdEff
-
-data EmulatorState =
-    EmulatorState
-        { _instanceIdThreads :: Map ContractInstanceId ThreadId
-        }
-
-makeLenses ''EmulatorState
 
 i :: forall effs.
     ( Member ContractInstanceIdEff effs
@@ -124,42 +78,6 @@ emRunLocal wllt = \case
         let handle = ContractHandle{chContract=con, chInstanceId = i}
         pure (handle, mkThread High (runReader wllt $ contractThread handle))
 
--- | Effects available to threads that run in the context of specific
---   agents (ie wallets)
-type EmulatorAgentThreadEffs effs =
-    Reader Wallet
-    ': Reader ThreadId
-    ': Yield (SimulatorSystemCall effs EmulatorEvent) (Maybe EmulatorEvent)
-    ': effs
-
-contractThread :: forall s e effs.
-    ( Member (State EmulatorState) effs
-    )
-    => ContractHandle s e
-    -> Eff (EmulatorAgentThreadEffs effs) ()
-contractThread ContractHandle{chInstanceId, chContract} = do
-    ask @ThreadId >>= registerInstance chInstanceId
-    mkSysCall @effs @EmulatorEvent Low Suspend >>= runInstance chContract
-
-registerInstance :: forall effs.
-    ( Member (State EmulatorState) effs )
-    => ContractInstanceId
-    -> ThreadId
-    -> Eff effs ()
-registerInstance i t = modify (instanceIdThreads . at i .~ Just t)
-
-runInstance :: forall s e effs.
-    Contract s e ()
-    -> Maybe EmulatorEvent
-    -> Eff (EmulatorAgentThreadEffs effs) ()
-runInstance contract event = do
-    case event of
-        Just (EndpointCall ep vl) -> do
-            -- handle the endpoint
-            pure ()
-        _ -> do
-            -- see if we can handle any requests
-            mkSysCall @effs @EmulatorEvent Low Suspend >>= runInstance contract
-
 emRunGlobal :: forall b effs. EmulatorGlobal b -> Eff effs (b, ThreadId -> SuspendedThread effs EmulatorEvent)
 emRunGlobal = undefined
+

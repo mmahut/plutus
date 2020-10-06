@@ -49,15 +49,15 @@ handleEmulator ::
     forall a effs systemEvent.
     SimulatorInterpreter a effs systemEvent
     -> Simulator a
-    ~> Eff (Yield (SimulatorSystemCall effs systemEvent) (Maybe systemEvent) ': effs)
+    ~> Eff (Yield (SystemCall effs systemEvent) (Maybe systemEvent) ': effs)
 handleEmulator SimulatorInterpreter {_runGlobal, _runLocal} = \case
     RunLocal wllt localAction -> do
         (b, thread) <- raise $ _runLocal wllt localAction
-        _ <- yield @(SimulatorSystemCall effs systemEvent) @(Maybe systemEvent) (WithPriority Low $ Fork thread) id
+        _ <- yield @(SystemCall effs systemEvent) @(Maybe systemEvent) (WithPriority Low $ Fork thread) id
         pure b
     RunGlobal globalAction -> do
         (b, thread) <- raise $ _runGlobal globalAction
-        _ <- yield @(SimulatorSystemCall effs systemEvent) @(Maybe systemEvent) (WithPriority Low $ Fork thread) id
+        _ <- yield @(SystemCall effs systemEvent) @(Maybe systemEvent) (WithPriority Low $ Fork thread) id
         pure b
 
 runSimulator ::

@@ -19,7 +19,7 @@ module Plutus.Trace.Scheduler(
     , SysCall(..)
     , WithPriority(..)
     , Priority(..)
-    , SimulatorSystemCall
+    , SystemCall
     , SuspendedThread
     , EmThread(..)
     , SchedulerState(..)
@@ -65,18 +65,18 @@ data WithPriority t
         , _thread   :: t
         }
 
-type SimulatorSystemCall effs systemEvent = WithPriority (SysCall effs systemEvent)
+type SystemCall effs systemEvent = WithPriority (SysCall effs systemEvent)
 type SuspendedThread effs systemEvent = WithPriority (EmThread effs systemEvent)
 
 -- | Thread that can be run by the scheduler
 data EmThread effs systemEvent =
     EmThread
-        { _continuation :: Maybe systemEvent -> Eff effs (Status effs (SimulatorSystemCall effs systemEvent) (Maybe systemEvent) ())
+        { _continuation :: Maybe systemEvent -> Eff effs (Status effs (SystemCall effs systemEvent) (Maybe systemEvent) ())
         , _threadId     :: ThreadId
         }
 
--- | Scheduler state consisting of three queues of suspended threads, one for each
---   'Priority' level.
+-- | Scheduler state consisting of three queues of suspended threads, one for 
+--   each 'Priority' level.
 data SchedulerState effs systemEvent
     = SchedulerState
         { _highPrio     :: Seq (EmThread effs systemEvent)
@@ -93,7 +93,7 @@ suspend = WithPriority
 
 -- | Make a thread with the given priority from an action. This is a
 --   convenience for defining 'SimulatorInterpreter' values.
-mkThread :: Priority -> Eff (Reader ThreadId ': Yield (SimulatorSystemCall effs systemEvent) (Maybe systemEvent) ': effs) () -> ThreadId -> SuspendedThread effs systemEvent
+mkThread :: Priority -> Eff (Reader ThreadId ': Yield (SystemCall effs systemEvent) (Maybe systemEvent) ': effs) () -> ThreadId -> SuspendedThread effs systemEvent
 mkThread prio action tid =
     let action' = runReader tid action
     in WithPriority
@@ -105,16 +105,16 @@ mkThread prio action tid =
             }
 
 mkSysCall :: forall effs systemEvent effs2.
-    Member (Yield (SimulatorSystemCall effs systemEvent) (Maybe systemEvent)) effs2
+    Member (Yield (SystemCall effs systemEvent) (Maybe systemEvent)) effs2
     => Priority
     -> SysCall effs systemEvent
     -> Eff effs2 (Maybe systemEvent)
-mkSysCall prio sc = yield @(SimulatorSystemCall effs systemEvent) @(Maybe systemEvent) (WithPriority prio sc) id
+mkSysCall prio sc = yield @(SystemCall effs systemEvent) @(Maybe systemEvent) (WithPriority prio sc) id
 
 runThreads ::
     forall effs systemEvent.
     Eq systemEvent
-    => Eff (Yield (SimulatorSystemCall effs systemEvent) (Maybe systemEvent) ': effs) ()
+    => Eff (Yield (SystemCall effs systemEvent) (Maybe systemEvent) ': effs) ()
     -> Eff effs ()
 runThreads e = do
     k <- runC e
