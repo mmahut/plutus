@@ -37,7 +37,8 @@ import           Data.Map                        (Map)
 import           Data.Proxy                      (Proxy (..))
 import qualified Data.Row.Internal               as V
 import           Data.Void                       (Void)
-import           Language.Plutus.Contract        (type (.\/), BlockchainActions, Contract, Endpoint, HasEndpoint, HasBlockchainActions)
+import           Language.Plutus.Contract        (type (.\/), BlockchainActions, Contract, Endpoint,
+                                                  HasBlockchainActions, HasEndpoint)
 import           Language.Plutus.Contract.Schema (Input, Output)
 import           Ledger.Slot                     (Slot)
 import           Ledger.Value                    (Value)
@@ -57,7 +58,7 @@ type ContractConstraints s =
 
 data EmulatorEvent =
     BlockAdded -- [Tx]
-    | NewSlot -- Slot
+    | NewSlot Slot
     | EndpointCall JSON.Value
 
 data EmulatorState =
@@ -89,7 +90,7 @@ data EmulatorLocal r where
     PayToWallet :: Wallet -> Value -> EmulatorLocal ()
 
 data EmulatorGlobal r where
-    WaitUntilSlot :: Slot -> EmulatorGlobal ()
+    WaitUntilSlot :: Slot -> EmulatorGlobal Slot
 
 instance SimulatorBackend Emulator where
     type LocalAction Emulator = EmulatorLocal
@@ -107,7 +108,7 @@ callEndpoint wallet hdl = send @(Simulator Emulator) . RunLocal wallet . CallEnd
 payToWallet :: Wallet -> Wallet -> Value -> EmulatorTrace ()
 payToWallet from_ to_ = send @(Simulator Emulator) . RunLocal from_ . PayToWallet to_
 
-waitUntilSlot :: Slot -> EmulatorTrace ()
+waitUntilSlot :: Slot -> EmulatorTrace Slot
 waitUntilSlot sl = send @(Simulator Emulator) $ RunGlobal (WaitUntilSlot sl)
 
 myContract :: Contract (BlockchainActions .\/ Endpoint "my endpoint" Int) Void ()

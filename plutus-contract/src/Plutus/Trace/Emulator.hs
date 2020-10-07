@@ -21,6 +21,7 @@ module Plutus.Trace.Emulator(
 
 import           Control.Monad                                   (void)
 import           Control.Monad.Freer
+import           Control.Monad.Freer.Coroutine                   (Yield)
 import           Control.Monad.Freer.Error                       (Error)
 import           Control.Monad.Freer.Reader                      (runReader)
 import           Control.Monad.Freer.State                       (State)
@@ -30,8 +31,8 @@ import           Data.Proxy                                      (Proxy)
 import           Language.Plutus.Contract                        (Contract, HasEndpoint)
 import qualified Language.Plutus.Contract.Effects.ExposeEndpoint as Endpoint
 import           Ledger.Value                                    (Value)
-import           Plutus.Trace.Scheduler                          (Priority (..), SuspendedThread, SysCall (..),
-                                                                  ThreadId, mkSysCall, mkThread)
+import           Plutus.Trace.Scheduler                          (Priority (..), SysCall (..), SystemCall, fork,
+                                                                  mkSysCall, sleep)
 import           Wallet.API                                      (defaultSlotRange, payToPublicKey_)
 import qualified Wallet.Emulator                                 as EM
 import           Wallet.Emulator.MultiAgent                      (MultiAgentEffect, walletAction)
@@ -68,23 +69,22 @@ emRunLocal :: forall b effs.
     )
     => Wallet
     -> EmulatorLocal b
-    -> Eff effs (b, ThreadId -> SuspendedThread effs EmulatorEvent)
+    -> Eff (Yield (SystemCall effs EmulatorEvent) (Maybe EmulatorEvent) ': effs) b
 emRunLocal wllt = \case
     ActivateContract con -> activate wllt con
     CallEndpointEm p h v -> callEndpoint p h v
     PayToWallet target vl -> payToWallet wllt target vl
 
-payToWallet ::
+payToWallet :: forall effs.
     ( Member MultiAgentEffect effs )
     => Wallet
     -> Wallet
     -> Value
-    -> Eff effs ((), ThreadId -> SuspendedThread effs EmulatorEvent)
-payToWallet source target amount = do
-    let payment = walletAction source $ payToPublicKey_ defaultSlotRange amount (EM.walletPubKey target)
-    pure ((), mkThread High payment)
+    -> Eff (Yield (SystemCall effs EmulatorEvent) (Maybe EmulatorEvent) ': effs) ()
+payToWallet source target amount = void $ fork @effs @EmulatorEvent High payment
+    where payment = walletAction source $ payToPublicKey_ defaultSlotRange amount (EM.walletPubKey target)
 
-activate ::
+activate :: forall s e effs.
     ( ContractConstraints s
     , Member ContractInstanceIdEff effs
     , Member (State EmulatorState) effs
@@ -93,11 +93,12 @@ activate ::
     )
     => Wallet
     -> Contract s e ()
-    -> Eff effs (ContractHandle s e, ThreadId -> SuspendedThread effs EmulatorEvent)
+    -> Eff (Yield (SystemCall effs EmulatorEvent) (Maybe EmulatorEvent) ': effs) (ContractHandle s e)
 activate wllt con = do
     i <- uniqueId
     let handle = ContractHandle{chContract=con, chInstanceId = i}
-    pure (handle, mkThread High (runReader wllt $ contractThread handle))
+    _ <- fork @effs @EmulatorEvent High (runReader wllt $ contractThread handle)
+    pure handle
 
 callEndpoint :: forall s l e ep effs.
     ( ContractConstraints s
@@ -108,14 +109,23 @@ callEndpoint :: forall s l e ep effs.
     => Proxy l
     -> ContractHandle s e
     -> ep
-    -> Eff effs ((), ThreadId -> SuspendedThread effs EmulatorEvent)
+    -> Eff (Yield (SystemCall effs EmulatorEvent) (Maybe EmulatorEvent) ': effs) ()
 callEndpoint _ ContractHandle{chInstanceId} ep = do
     threadId <- getThread chInstanceId
     let epJson = JSON.toJSON $ Endpoint.event @l @ep @s ep
         thr = void $ mkSysCall @effs @EmulatorEvent High (Message threadId $ EndpointCall epJson)
-    pure ((), mkThread High thr)
+    void $ fork @effs @EmulatorEvent High thr
 
-emRunGlobal :: forall b effs. EmulatorGlobal b -> Eff effs (b, ThreadId -> SuspendedThread effs EmulatorEvent)
+emRunGlobal :: forall b effs.
+    EmulatorGlobal b
+    -> Eff (Yield (SystemCall effs EmulatorEvent) (Maybe EmulatorEvent) ': effs) b
 emRunGlobal = \case
-    _ -> undefined
+    WaitUntilSlot s ->
+        let go = do
+                e <- sleep @effs Sleeping
+                case e of
+                    Just (NewSlot sl)
+                        | sl >= s -> pure sl
+                    _ -> go
+        in go
 

@@ -17,7 +17,7 @@ module Plutus.Trace.Emulator.ContractInstance(
     ) where
 
 import           Control.Lens
-import           Control.Monad                                 (guard, void)
+import           Control.Monad                                 (guard, unless, void)
 import           Control.Monad.Freer
 import           Control.Monad.Freer.Error                     (Error, throwError)
 import           Control.Monad.Freer.Reader                    (Reader, ask)
@@ -29,14 +29,14 @@ import           Language.Plutus.Contract                      (Contract (..))
 import           Language.Plutus.Contract.Resumable            (Request (..), Requests (..), Response (..))
 import qualified Language.Plutus.Contract.Resumable            as State
 import           Language.Plutus.Contract.Schema               (Event (..), Handlers (..), eventName, handlerName)
+import           Language.Plutus.Contract.Trace                (handleBlockchainQueries, handleSlotNotifications)
 import           Language.Plutus.Contract.Trace.RequestHandler (RequestHandler (..), tryHandler, wrapHandler)
 import           Language.Plutus.Contract.Types                (ResumableResult (..))
 import qualified Language.Plutus.Contract.Types                as Contract.Types
-import Language.Plutus.Contract.Trace (handleBlockchainQueries, handleSlotNotifications)
 import           Plutus.Trace.Emulator.Types                   (ContractConstraints, ContractHandle (..),
                                                                 EmulatorAgentThreadEffs, EmulatorEvent (..),
                                                                 EmulatorState, instanceIdThreads)
-import           Plutus.Trace.Scheduler                        (Priority (..), SysCall (..), ThreadId, mkSysCall)
+import           Plutus.Trace.Scheduler                        (Priority (..), SysCall (..), ThreadId, mkSysCall, sleep)
 import           Wallet.Emulator.MultiAgent                    (EmulatedWalletEffects, MultiAgentEffect, walletAction)
 import           Wallet.Emulator.Wallet                        (Wallet)
 import           Wallet.Types                                  (ContractInstanceId)
@@ -108,23 +108,38 @@ runInstance :: forall s e a effs.
     => Maybe EmulatorEvent
     -> Eff (ContractInstanceThreadEffs s e a effs) ()
 runInstance event = do
-    case event of
-        Just (EndpointCall vl) -> do
-            -- TODO:
-            -- check if the endpoint is active and (maybe - configurable) throw an error if it isn't
-            -- _hks <- getHooks @s @e @a
-            e <- case JSON.fromJSON @(Event s) vl of
-                    JSON.Error e'       -> throwError $ JSONDecodingError e'
-                    JSON.Success event' -> pure event'
+    hks <- getHooks @s @e @a
+    -- FIXME: Log if hks == null (ie. the contract instance is done)
+    unless (null hks) $ do
+        case event of
+            Just (EndpointCall vl) -> do
+                -- TODO:
+                -- check if the endpoint is active and (maybe - configurable) throw an error if it isn't
+                e <- case JSON.fromJSON @(Event s) vl of
+                        JSON.Error e'       -> throwError $ JSONDecodingError e'
+                        JSON.Success event' -> pure event'
 
-            void $ respondToRequest @s @e @a $ RequestHandler $ \h -> do
-                guard $ handlerName h == eventName e
-                pure e
-            pure ()
-        _ -> do
-            -- FIXME: handleSlotNotifications configurable
-            void $ respondToRequest @s @e @a (handleBlockchainQueries <> handleSlotNotifications)
-            mkSysCall @effs @EmulatorEvent Low Suspend >>= runInstance
+                void $ respondToRequest @s @e @a $ RequestHandler $ \h -> do
+                    guard $ handlerName h == eventName e
+                    pure e
+                sleep @effs Low >>= runInstance
+            _ -> do
+                -- FIXME: handleSlotNotifications configurable
+                responses <- respondToRequest @s @e @a (handleBlockchainQueries <> handleSlotNotifications)
+                let prio =
+                        maybe
+                            -- If no events could be handled we go to sleep
+                            -- with the lowest priority, awaking only after
+                            -- some external event has happened, for example
+                            -- when a new block was added.
+                            Sleeping
+
+                            -- If an event was handled we go to sleep with
+                            -- a low priority, trying again after all other
+                            -- active threads have had their turn
+                            (const Low)
+                            responses
+                sleep @effs prio >>= runInstance
 
 getHooks :: forall s e a effs. Member (State (ContractInstanceState s e a)) effs => Eff effs [Request (Handlers s)]
 getHooks = State.unRequests . wcsRequests <$> gets @(ContractInstanceState s e a) instContractState

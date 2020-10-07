@@ -47,9 +47,7 @@ emptyNodeClientState = NodeClientState (Slot 0) mempty
 
 makeLenses ''NodeClientState
 
-data ChainClientNotification =
-    BlockValidated Block
-    | SlotChanged Slot
+data ChainClientNotification = BlockValidated Block | SlotChanged Slot
     deriving (Show, Eq)
 
 data NodeClientControlEffect r where

@@ -23,10 +23,13 @@ module Plutus.Trace.Scheduler(
     , SuspendedThread
     , EmThread(..)
     , SchedulerState(..)
+    -- * Thread API
     , runThreads
+    , fork
+    , sleep
+    -- * Etc.
     , mkThread
     , mkSysCall
-    , suspend
     ) where
 
 
@@ -88,8 +91,8 @@ data SchedulerState effs systemEvent
 
 makeLenses ''SchedulerState
 
-suspend :: Priority -> EmThread effs systemEvent -> SuspendedThread effs systemEvent
-suspend = WithPriority
+suspendThread :: Priority -> EmThread effs systemEvent -> SuspendedThread effs systemEvent
+suspendThread = WithPriority
 
 -- | Make a thread with the given priority from an action. This is a
 --   convenience for defining 'SimulatorInterpreter' values.
@@ -111,6 +114,20 @@ mkSysCall :: forall effs systemEvent effs2.
     -> Eff effs2 (Maybe systemEvent)
 mkSysCall prio sc = yield @(SystemCall effs systemEvent) @(Maybe systemEvent) (WithPriority prio sc) id
 
+-- | Start a new thread with the given priority
+fork :: forall effs systemEvent effs2.
+    Member (Yield (SystemCall effs systemEvent) (Maybe systemEvent)) effs2
+    => Priority
+    -> Eff (Reader ThreadId ': Yield (SystemCall effs systemEvent) (Maybe systemEvent) ': effs) ()
+    -> Eff effs2 (Maybe systemEvent)
+fork prio action = mkSysCall prio (Fork $ mkThread prio action)
+
+sleep :: forall effs systemEvent effs2.
+    Member (Yield (SystemCall effs systemEvent) (Maybe systemEvent)) effs2
+    => Priority
+    -> Eff effs2 (Maybe systemEvent)
+sleep prio = mkSysCall @effs @systemEvent @effs2 prio Suspend
+
 runThreads ::
     forall effs systemEvent.
     Eq systemEvent
@@ -122,7 +139,7 @@ runThreads e = do
         Done () -> pure ()
         Continue _ k' ->
             let initialThread = EmThread{_continuation = k', _threadId = initialThreadId}
-            in loop $ enqueue (suspend High initialThread) initialState
+            in loop $ enqueue (suspendThread High initialThread) initialState
 
 -- | Run the threads that are scheduled in a 'SchedulerState' to completion.
 loop :: Eq systemEvent => SchedulerState effs systemEvent -> Eff effs ()
@@ -133,7 +150,7 @@ loop s = do
             case result of
                 Done _ -> loop schedulerState
                 Continue WithPriority{_priority, _thread=sysCall} k -> do
-                    let thisThread = suspend _priority EmThread{_threadId=_threadId, _continuation=k}
+                    let thisThread = suspendThread _priority EmThread{_threadId=_threadId, _continuation=k}
                     loop (schedulerState & handleSysCall sysCall & enqueue thisThread)
         NoMoreThreads -> pure ()
 

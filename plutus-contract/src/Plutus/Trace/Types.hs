@@ -41,8 +41,8 @@ data Simulator a b where
 
 data SimulatorInterpreter a effs systemEvent
     = SimulatorInterpreter
-        { _runLocal     :: forall b. Agent a -> LocalAction a b -> Eff effs (b, ThreadId -> SuspendedThread effs systemEvent)
-        , _runGlobal    :: forall b. GlobalAction a b -> Eff effs (b, ThreadId -> SuspendedThread effs systemEvent)
+        { _runLocal     :: forall b. Agent a -> LocalAction a b -> Eff (Yield (SystemCall effs systemEvent) (Maybe systemEvent) ': effs) b
+        , _runGlobal    :: forall b. GlobalAction a b -> Eff (Yield (SystemCall effs systemEvent) (Maybe systemEvent) ': effs) b
         }
 
 handleEmulator ::
@@ -51,14 +51,8 @@ handleEmulator ::
     -> Simulator a
     ~> Eff (Yield (SystemCall effs systemEvent) (Maybe systemEvent) ': effs)
 handleEmulator SimulatorInterpreter {_runGlobal, _runLocal} = \case
-    RunLocal wllt localAction -> do
-        (b, thread) <- raise $ _runLocal wllt localAction
-        _ <- yield @(SystemCall effs systemEvent) @(Maybe systemEvent) (WithPriority Low $ Fork thread) id
-        pure b
-    RunGlobal globalAction -> do
-        (b, thread) <- raise $ _runGlobal globalAction
-        _ <- yield @(SystemCall effs systemEvent) @(Maybe systemEvent) (WithPriority Low $ Fork thread) id
-        pure b
+    RunLocal wllt localAction -> _runLocal wllt localAction
+    RunGlobal globalAction -> _runGlobal globalAction
 
 runSimulator ::
     forall a effs systemEvent.
