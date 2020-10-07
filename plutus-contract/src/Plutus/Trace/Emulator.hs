@@ -11,9 +11,10 @@
 
 module Plutus.Trace.Emulator(
     Emulator
+    , runEmulator
     , ContractHandle(..)
     -- * Interpreter
-    , interpretEmulator
+    , emInterpreter
     -- * Instance IDs
     , ContractInstanceIdEff(..)
     , uniqueId
@@ -23,6 +24,7 @@ import           Control.Monad                                   (void)
 import           Control.Monad.Freer
 import           Control.Monad.Freer.Coroutine                   (Yield)
 import           Control.Monad.Freer.Error                       (Error)
+import           Control.Monad.Freer.Extras                      (raiseEnd)
 import           Control.Monad.Freer.Reader                      (runReader)
 import           Control.Monad.Freer.State                       (State)
 import           Control.Monad.Freer.TH                          (makeEffect)
@@ -32,14 +34,16 @@ import           Language.Plutus.Contract                        (Contract, HasE
 import qualified Language.Plutus.Contract.Effects.ExposeEndpoint as Endpoint
 import           Ledger.Value                                    (Value)
 import           Plutus.Trace.Scheduler                          (Priority (..), SysCall (..), SystemCall, fork,
-                                                                  mkSysCall, sleep)
+                                                                  mkSysCall, runThreads, sleep)
 import           Wallet.API                                      (defaultSlotRange, payToPublicKey_)
 import qualified Wallet.Emulator                                 as EM
+import           Wallet.Emulator.Chain                           (ChainControlEffect, ChainEffect)
 import           Wallet.Emulator.MultiAgent                      (MultiAgentEffect, walletAction)
 import           Wallet.Emulator.Wallet                          (Wallet (..))
 import           Wallet.Types                                    (ContractInstanceId)
 
 import           Plutus.Trace.Emulator.ContractInstance          (ContractInstanceError, contractThread, getThread)
+import           Plutus.Trace.Emulator.System                    (launchSystemThreads)
 import           Plutus.Trace.Emulator.Types                     (ContractConstraints, ContractHandle (..), Emulator,
                                                                   EmulatorEvent (..), EmulatorGlobal (..),
                                                                   EmulatorLocal (..), EmulatorState)
@@ -49,14 +53,28 @@ data ContractInstanceIdEff r where
     UniqueId :: ContractInstanceIdEff ContractInstanceId
 makeEffect ''ContractInstanceIdEff
 
-interpretEmulator :: forall effs.
+runEmulator :: forall effs.
+    ( Member ContractInstanceIdEff effs
+    , Member (State EmulatorState) effs
+    , Member MultiAgentEffect effs
+    , Member (Error ContractInstanceError) effs
+    , Member ChainEffect effs
+    , Member ChainControlEffect effs
+    )
+    => Eff '[Simulator Emulator] ()
+    -> Eff effs ()
+runEmulator action = runThreads $ do
+    launchSystemThreads
+    interpret (handleSimulator emInterpreter) $ raiseEnd action
+
+emInterpreter :: forall effs.
     ( Member ContractInstanceIdEff effs
     , Member (State EmulatorState) effs
     , Member MultiAgentEffect effs
     , Member (Error ContractInstanceError) effs
     )
     => SimulatorInterpreter Emulator effs EmulatorEvent
-interpretEmulator = SimulatorInterpreter
+emInterpreter = SimulatorInterpreter
     { _runLocal = emRunLocal
     , _runGlobal = emRunGlobal
     }
@@ -120,12 +138,5 @@ emRunGlobal :: forall b effs.
     EmulatorGlobal b
     -> Eff (Yield (SystemCall effs EmulatorEvent) (Maybe EmulatorEvent) ': effs) b
 emRunGlobal = \case
-    WaitUntilSlot s ->
-        let go = do
-                e <- sleep @effs Sleeping
-                case e of
-                    Just (NewSlot sl)
-                        | sl >= s -> pure sl
-                    _ -> go
-        in go
-
+    WaitUntilSlot s -> go where
+        go = sleep @effs Sleeping >>= \case { Just (NewSlot sl) | sl >= s -> pure sl; _ -> go }

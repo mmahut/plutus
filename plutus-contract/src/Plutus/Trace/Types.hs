@@ -20,7 +20,7 @@ module Plutus.Trace.Types
 
     -- * Handling the 'Simulator' effect
     SimulatorInterpreter (..),
-    handleEmulator,
+    handleSimulator,
     runSimulator,
   )
 where
@@ -45,12 +45,12 @@ data SimulatorInterpreter a effs systemEvent
         , _runGlobal    :: forall b. GlobalAction a b -> Eff (Yield (SystemCall effs systemEvent) (Maybe systemEvent) ': effs) b
         }
 
-handleEmulator ::
+handleSimulator ::
     forall a effs systemEvent.
     SimulatorInterpreter a effs systemEvent
     -> Simulator a
     ~> Eff (Yield (SystemCall effs systemEvent) (Maybe systemEvent) ': effs)
-handleEmulator SimulatorInterpreter {_runGlobal, _runLocal} = \case
+handleSimulator SimulatorInterpreter {_runGlobal, _runLocal} = \case
     RunLocal wllt localAction -> _runLocal wllt localAction
     RunGlobal globalAction -> _runGlobal globalAction
 
@@ -60,4 +60,4 @@ runSimulator ::
     => SimulatorInterpreter a effs systemEvent
     -> Eff '[Simulator a] ()
     -> Eff effs ()
-runSimulator i = runThreads . interpret (handleEmulator i) . raiseEnd
+runSimulator i = runThreads . interpret (handleSimulator i) . raiseEnd

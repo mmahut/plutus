@@ -41,6 +41,7 @@ import           Language.Plutus.Contract        (type (.\/), BlockchainActions,
                                                   HasBlockchainActions, HasEndpoint)
 import           Language.Plutus.Contract.Schema (Input, Output)
 import           Ledger.Slot                     (Slot)
+import           Ledger.Tx                       (Tx)
 import           Ledger.Value                    (Value)
 import           Plutus.Trace.Scheduler          (SystemCall, ThreadId)
 import           Plutus.Trace.Types              (Simulator (..), SimulatorBackend (..))
@@ -57,9 +58,10 @@ type ContractConstraints s =
     )
 
 data EmulatorEvent =
-    BlockAdded -- [Tx]
+    BlockAdded [Tx]
     | NewSlot Slot
     | EndpointCall JSON.Value
+    deriving Eq
 
 data EmulatorState =
     EmulatorState
@@ -73,7 +75,6 @@ type EmulatorAgentThreadEffs effs =
     ': Reader ThreadId
     ': Yield (SystemCall effs EmulatorEvent) (Maybe EmulatorEvent)
     ': effs
-
 
 data Emulator
 
