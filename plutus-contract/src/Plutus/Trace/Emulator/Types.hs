@@ -48,14 +48,16 @@ import           Wallet.Types                    (ContractInstanceId)
 
 type ContractConstraints s =
     ( V.Forall (Output s) V.Unconstrained1
+    , V.Forall (Input s) V.Unconstrained1
     , V.AllUniqueLabels (Input s)
     , V.Forall (Input s) JSON.FromJSON
+    , V.Forall (Input s) JSON.ToJSON
     )
 
 data EmulatorEvent =
     BlockAdded -- [Tx]
     | NewSlot -- Slot
-    | EndpointCall String JSON.Value
+    | EndpointCall JSON.Value
 
 data EmulatorState =
     EmulatorState

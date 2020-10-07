@@ -12,22 +12,23 @@
 
 module Plutus.Trace.Emulator.ContractInstance(
     contractThread
+    , getThread
+    , ContractInstanceError
     ) where
 
 import           Control.Lens
 import           Control.Monad                                 (guard, void)
 import           Control.Monad.Freer
+import           Control.Monad.Freer.Error                     (Error, throwError)
 import           Control.Monad.Freer.Reader                    (Reader, ask)
 import           Control.Monad.Freer.State                     (State, evalState, gets, modify)
 import qualified Data.Aeson.Types                              as JSON
 import           Data.Foldable                                 (traverse_)
-import qualified Data.Row.Internal                             as V
-import qualified Data.Row.Variants                             as V
 import           Data.Sequence                                 (Seq)
 import           Language.Plutus.Contract                      (Contract (..))
 import           Language.Plutus.Contract.Resumable            (Request (..), Requests (..), Response (..))
 import qualified Language.Plutus.Contract.Resumable            as State
-import           Language.Plutus.Contract.Schema               (Event (..), Handlers (..))
+import           Language.Plutus.Contract.Schema               (Event (..), Handlers (..), eventName, handlerName)
 import           Language.Plutus.Contract.Trace.RequestHandler (RequestHandler (..), tryHandler, wrapHandler)
 import           Language.Plutus.Contract.Types                (ResumableResult (..))
 import qualified Language.Plutus.Contract.Types                as Contract.Types
@@ -48,6 +49,7 @@ type ContractInstanceThreadEffs s e a effs =
 contractThread :: forall s e effs.
     ( Member (State EmulatorState) effs
     , Member MultiAgentEffect effs
+    , Member (Error ContractInstanceError) effs
     , ContractConstraints s
     )
     => ContractHandle s e
@@ -64,6 +66,20 @@ registerInstance :: forall effs.
     -> ThreadId
     -> Eff effs ()
 registerInstance i t = modify (instanceIdThreads . at i .~ Just t)
+
+getThread :: forall effs.
+    ( Member (State EmulatorState) effs
+    , Member (Error ContractInstanceError) effs
+    )
+    => ContractInstanceId
+    -> Eff effs ThreadId
+getThread t = do
+    r <- gets (view $ instanceIdThreads . at t)
+    maybe (throwError $ ThreadIdNotFound t) pure r
+
+data ContractInstanceError =
+    ThreadIdNotFound ContractInstanceId
+    | JSONDecodingError String
 
 data ContractInstanceState s e a =
     ContractInstanceState
@@ -86,25 +102,25 @@ emptyInstanceState con@(Contract c) =
 runInstance :: forall s e a effs.
     ( Member MultiAgentEffect effs
     , ContractConstraints s
+    , Member (Error ContractInstanceError) effs
     )
     => Maybe EmulatorEvent
     -> Eff (ContractInstanceThreadEffs s e a effs) ()
 runInstance event = do
     case event of
-        Just (EndpointCall endpointName vl) -> do
+        Just (EndpointCall vl) -> do
             -- check if the endpoint is active and throw an error if it isn't
-            _hks <- getHooks @s @e @a
-            -- event <- decodeJSON @(Event s) -- ??
-            -- TODO: What to do if endpoint is not active? -> Configurable (wait or error)
-            void $ respondToRequest @s @e @a $ RequestHandler $ \(Handlers v) -> do
-                guard $ (V.eraseWithLabels @V.Unconstrained1 (const ()) v) == (endpointName, ())
-                let result = JSON.fromJSON @(Event s) vl
-                case result of
-                    JSON.Error e        -> error e -- FIXME
+            -- _hks <- getHooks @s @e @a
+            e <- case JSON.fromJSON @(Event s) vl of
+                    JSON.Error e'       -> throwError $ JSONDecodingError e'
                     JSON.Success event' -> pure event'
+            -- TODO: What to do if endpoint is not active? -> Configurable (wait or error)
+            void $ respondToRequest @s @e @a $ RequestHandler $ \h -> do
+                guard $ handlerName h == eventName e
+                pure e
             pure ()
         _ -> do
-            -- see if we can handle any requests
+            -- TODO: see if we can handle any requests
             mkSysCall @effs @EmulatorEvent Low Suspend >>= runInstance
 
 getHooks :: forall s e a effs. Member (State (ContractInstanceState s e a)) effs => Eff effs [Request (Handlers s)]
