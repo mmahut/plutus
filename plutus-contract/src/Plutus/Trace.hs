@@ -10,8 +10,10 @@
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
-module Plutus.Trace where
+module Plutus.Trace(
+    module X
+    ) where
 
-import           Plutus.Trace.Emulator
-import           Plutus.Trace.Playground
-import           Plutus.Trace.Types
+import           Plutus.Trace.Emulator   as X
+import           Plutus.Trace.Playground as X
+import           Plutus.Trace.Types      as X
