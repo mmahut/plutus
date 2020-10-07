@@ -70,6 +70,7 @@ module Language.Plutus.Contract.Trace
     , handleBlockchainEvents
     , handleBlockchainEventsOptions
     , handleBlockchainQueries
+    , handleSlotNotifications
     -- * Initial distributions of emulated chains
     , InitialDistribution
     , defaultDist

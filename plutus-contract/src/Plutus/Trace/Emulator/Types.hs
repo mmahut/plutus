@@ -37,7 +37,7 @@ import           Data.Map                        (Map)
 import           Data.Proxy                      (Proxy (..))
 import qualified Data.Row.Internal               as V
 import           Data.Void                       (Void)
-import           Language.Plutus.Contract        (type (.\/), BlockchainActions, Contract, Endpoint, HasEndpoint)
+import           Language.Plutus.Contract        (type (.\/), BlockchainActions, Contract, Endpoint, HasEndpoint, HasBlockchainActions)
 import           Language.Plutus.Contract.Schema (Input, Output)
 import           Ledger.Slot                     (Slot)
 import           Ledger.Value                    (Value)
@@ -52,6 +52,7 @@ type ContractConstraints s =
     , V.AllUniqueLabels (Input s)
     , V.Forall (Input s) JSON.FromJSON
     , V.Forall (Input s) JSON.ToJSON
+    , HasBlockchainActions s
     )
 
 data EmulatorEvent =

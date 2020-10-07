@@ -32,6 +32,7 @@ import           Language.Plutus.Contract.Schema               (Event (..), Hand
 import           Language.Plutus.Contract.Trace.RequestHandler (RequestHandler (..), tryHandler, wrapHandler)
 import           Language.Plutus.Contract.Types                (ResumableResult (..))
 import qualified Language.Plutus.Contract.Types                as Contract.Types
+import Language.Plutus.Contract.Trace (handleBlockchainQueries, handleSlotNotifications)
 import           Plutus.Trace.Emulator.Types                   (ContractConstraints, ContractHandle (..),
                                                                 EmulatorAgentThreadEffs, EmulatorEvent (..),
                                                                 EmulatorState, instanceIdThreads)
@@ -109,18 +110,20 @@ runInstance :: forall s e a effs.
 runInstance event = do
     case event of
         Just (EndpointCall vl) -> do
-            -- check if the endpoint is active and throw an error if it isn't
+            -- TODO:
+            -- check if the endpoint is active and (maybe - configurable) throw an error if it isn't
             -- _hks <- getHooks @s @e @a
             e <- case JSON.fromJSON @(Event s) vl of
                     JSON.Error e'       -> throwError $ JSONDecodingError e'
                     JSON.Success event' -> pure event'
-            -- TODO: What to do if endpoint is not active? -> Configurable (wait or error)
+
             void $ respondToRequest @s @e @a $ RequestHandler $ \h -> do
                 guard $ handlerName h == eventName e
                 pure e
             pure ()
         _ -> do
-            -- TODO: see if we can handle any requests
+            -- FIXME: handleSlotNotifications configurable
+            void $ respondToRequest @s @e @a (handleBlockchainQueries <> handleSlotNotifications)
             mkSysCall @effs @EmulatorEvent Low Suspend >>= runInstance
 
 getHooks :: forall s e a effs. Member (State (ContractInstanceState s e a)) effs => Eff effs [Request (Handlers s)]
