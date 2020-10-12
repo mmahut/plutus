@@ -35,7 +35,7 @@ import           Language.Plutus.Contract.Types                (ResumableResult 
 import qualified Language.Plutus.Contract.Types                as Contract.Types
 import           Plutus.Trace.Emulator.Types                   (ContractConstraints, ContractHandle (..),
                                                                 EmulatorAgentThreadEffs, EmulatorEvent (..),
-                                                                EmulatorState, instanceIdThreads)
+                                                                EmulatorThreads, instanceIdThreads)
 import           Plutus.Trace.Scheduler                        (Priority (..), SysCall (..), ThreadId, mkSysCall, sleep)
 import           Wallet.Emulator.MultiAgent                    (EmulatedWalletEffects, MultiAgentEffect, walletAction)
 import           Wallet.Emulator.Wallet                        (Wallet)
@@ -48,7 +48,7 @@ type ContractInstanceThreadEffs s e a effs =
     ': EmulatorAgentThreadEffs effs
 
 contractThread :: forall s e effs.
-    ( Member (State EmulatorState) effs
+    ( Member (State EmulatorThreads) effs
     , Member MultiAgentEffect effs
     , Member (Error ContractInstanceError) effs
     , ContractConstraints s
@@ -62,14 +62,14 @@ contractThread ContractHandle{chInstanceId, chContract} = do
         runInstance msg
 
 registerInstance :: forall effs.
-    ( Member (State EmulatorState) effs )
+    ( Member (State EmulatorThreads) effs )
     => ContractInstanceId
     -> ThreadId
     -> Eff effs ()
 registerInstance i t = modify (instanceIdThreads . at i .~ Just t)
 
 getThread :: forall effs.
-    ( Member (State EmulatorState) effs
+    ( Member (State EmulatorThreads) effs
     , Member (Error ContractInstanceError) effs
     )
     => ContractInstanceId

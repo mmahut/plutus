@@ -89,6 +89,7 @@ library
         Control.Monad.Freer.Extras
         Control.Monad.Freer.Log
         Plutus.Trace
+        Plutus.Trace.Effects.ContractInstanceId
         Plutus.Trace.Emulator
         Plutus.Trace.Emulator.ContractInstance
         Plutus.Trace.Emulator.System

@@ -11,13 +11,15 @@
 
 module Plutus.Trace.Emulator(
     Emulator
-    , runEmulator
+    , interpretSimulatorEm
     , ContractHandle(..)
+    -- * Constructing Traces
+    , Types.activateContract
+    , Types.callEndpoint
+    , Types.payToWallet
+    , Types.waitUntilSlot
     -- * Interpreter
     , emInterpreter
-    -- * Instance IDs
-    , ContractInstanceIdEff(..)
-    , uniqueId
     ) where
 
 import           Control.Monad                                   (void)
@@ -26,8 +28,7 @@ import           Control.Monad.Freer.Coroutine                   (Yield)
 import           Control.Monad.Freer.Error                       (Error)
 import           Control.Monad.Freer.Extras                      (raiseEnd)
 import           Control.Monad.Freer.Reader                      (runReader)
-import           Control.Monad.Freer.State                       (State)
-import           Control.Monad.Freer.TH                          (makeEffect)
+import           Control.Monad.Freer.State                       (State, evalState)
 import qualified Data.Aeson                                      as JSON
 import           Data.Proxy                                      (Proxy)
 import           Language.Plutus.Contract                        (Contract, HasEndpoint)
@@ -40,36 +41,37 @@ import qualified Wallet.Emulator                                 as EM
 import           Wallet.Emulator.Chain                           (ChainControlEffect, ChainEffect)
 import           Wallet.Emulator.MultiAgent                      (MultiAgentEffect, walletAction)
 import           Wallet.Emulator.Wallet                          (Wallet (..))
-import           Wallet.Types                                    (ContractInstanceId)
 
+import           Plutus.Trace.Effects.ContractInstanceId         (ContractInstanceIdEff, handleDeterministicIds, nextId)
 import           Plutus.Trace.Emulator.ContractInstance          (ContractInstanceError, contractThread, getThread)
 import           Plutus.Trace.Emulator.System                    (launchSystemThreads)
 import           Plutus.Trace.Emulator.Types                     (ContractConstraints, ContractHandle (..), Emulator,
                                                                   EmulatorEvent (..), EmulatorGlobal (..),
-                                                                  EmulatorLocal (..), EmulatorState)
+                                                                  EmulatorLocal (..), EmulatorThreads)
+import qualified Plutus.Trace.Emulator.Types                     as Types
 import           Plutus.Trace.Types
 
-data ContractInstanceIdEff r where
-    UniqueId :: ContractInstanceIdEff ContractInstanceId
-makeEffect ''ContractInstanceIdEff
-
-runEmulator :: forall effs.
-    ( Member ContractInstanceIdEff effs
-    , Member (State EmulatorState) effs
-    , Member MultiAgentEffect effs
+-- | Interpret a 'Simulator Emulator' action in the multi agent and emulated
+--   blockchain effects.
+interpretSimulatorEm :: forall effs.
+    ( Member MultiAgentEffect effs
     , Member (Error ContractInstanceError) effs
     , Member ChainEffect effs
     , Member ChainControlEffect effs
     )
     => Eff '[Simulator Emulator] ()
     -> Eff effs ()
-runEmulator action = runThreads $ do
-    launchSystemThreads
-    interpret (handleSimulator emInterpreter) $ raiseEnd action
+interpretSimulatorEm action =
+    evalState @EmulatorThreads mempty
+        $ handleDeterministicIds
+        $ runThreads
+        $ do
+            launchSystemThreads
+            interpret (handleSimulator emInterpreter) $ raiseEnd action
 
 emInterpreter :: forall effs.
     ( Member ContractInstanceIdEff effs
-    , Member (State EmulatorState) effs
+    , Member (State EmulatorThreads) effs
     , Member MultiAgentEffect effs
     , Member (Error ContractInstanceError) effs
     )
@@ -81,7 +83,7 @@ emInterpreter = SimulatorInterpreter
 
 emRunLocal :: forall b effs.
     ( Member ContractInstanceIdEff effs
-    , Member (State EmulatorState) effs
+    , Member (State EmulatorThreads) effs
     , Member MultiAgentEffect effs
     , Member (Error ContractInstanceError) effs
     )
@@ -105,7 +107,7 @@ payToWallet source target amount = void $ fork @effs @EmulatorEvent High payment
 activate :: forall s e effs.
     ( ContractConstraints s
     , Member ContractInstanceIdEff effs
-    , Member (State EmulatorState) effs
+    , Member (State EmulatorThreads) effs
     , Member MultiAgentEffect effs
     , Member (Error ContractInstanceError) effs
     )
@@ -113,7 +115,7 @@ activate :: forall s e effs.
     -> Contract s e ()
     -> Eff (Yield (SystemCall effs EmulatorEvent) (Maybe EmulatorEvent) ': effs) (ContractHandle s e)
 activate wllt con = do
-    i <- uniqueId
+    i <- nextId
     let handle = ContractHandle{chContract=con, chInstanceId = i}
     _ <- fork @effs @EmulatorEvent High (runReader wllt $ contractThread handle)
     pure handle
@@ -121,7 +123,7 @@ activate wllt con = do
 callEndpoint :: forall s l e ep effs.
     ( ContractConstraints s
     , HasEndpoint l ep s
-    , Member (State EmulatorState) effs
+    , Member (State EmulatorThreads) effs
     , Member (Error ContractInstanceError) effs
     )
     => Proxy l

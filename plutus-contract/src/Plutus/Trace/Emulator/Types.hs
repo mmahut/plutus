@@ -1,6 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DerivingStrategies  #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -12,7 +13,7 @@
 
 module Plutus.Trace.Emulator.Types(
     EmulatorEvent(..)
-    , EmulatorState(..)
+    , EmulatorThreads(..)
     , instanceIdThreads
     , EmulatorAgentThreadEffs
     , ContractHandle(..)
@@ -25,7 +26,6 @@ module Plutus.Trace.Emulator.Types(
     , callEndpoint
     , payToWallet
     , waitUntilSlot
-    , etrace
     ) where
 
 import           Control.Lens
@@ -36,9 +36,7 @@ import qualified Data.Aeson                      as JSON
 import           Data.Map                        (Map)
 import           Data.Proxy                      (Proxy (..))
 import qualified Data.Row.Internal               as V
-import           Data.Void                       (Void)
-import           Language.Plutus.Contract        (type (.\/), BlockchainActions, Contract, Endpoint,
-                                                  HasBlockchainActions, HasEndpoint)
+import           Language.Plutus.Contract        (Contract, HasBlockchainActions, HasEndpoint)
 import           Language.Plutus.Contract.Schema (Input, Output)
 import           Ledger.Slot                     (Slot)
 import           Ledger.Tx                       (Tx)
@@ -61,14 +59,15 @@ data EmulatorEvent =
     BlockAdded [Tx]
     | NewSlot Slot
     | EndpointCall JSON.Value
-    deriving Eq
+    deriving stock Eq
 
-data EmulatorState =
-    EmulatorState
+-- | A map of contract instance ID to thread ID
+newtype EmulatorThreads =
+    EmulatorThreads
         { _instanceIdThreads :: Map ContractInstanceId ThreadId
-        }
+        } deriving newtype (Semigroup, Monoid)
 
-makeLenses ''EmulatorState
+makeLenses ''EmulatorThreads
 
 type EmulatorAgentThreadEffs effs =
     Reader Wallet
@@ -111,11 +110,3 @@ payToWallet from_ to_ = send @(Simulator Emulator) . RunLocal from_ . PayToWalle
 
 waitUntilSlot :: Slot -> EmulatorTrace Slot
 waitUntilSlot sl = send @(Simulator Emulator) $ RunGlobal (WaitUntilSlot sl)
-
-myContract :: Contract (BlockchainActions .\/ Endpoint "my endpoint" Int) Void ()
-myContract = undefined
-
-etrace :: EmulatorTrace ()
-etrace = do
-    runningCon <- activateContract (Wallet 1) myContract
-    callEndpoint @"my endpoint" (Wallet 1) runningCon 10
