@@ -1,7 +1,7 @@
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE MonoLocalBinds      #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
@@ -10,18 +10,18 @@ module Plutus.Trace.Emulator.System(
     launchSystemThreads
     ) where
 
-import           Control.Monad                 (forever, forM_)
+import           Control.Monad                 (forM_, forever)
 import           Control.Monad.Freer
-import Data.Foldable (traverse_)
 import           Control.Monad.Freer.Coroutine
+import           Data.Foldable                 (traverse_)
 import           Wallet.Emulator.Chain         (ChainControlEffect, ChainEffect, getCurrentSlot, processBlock)
-import           Wallet.Emulator.MultiAgent                    (MultiAgentEffect, walletControlAction)
+import           Wallet.Emulator.MultiAgent    (MultiAgentEffect, walletControlAction)
 
 import           Plutus.Trace.Emulator.Types   (EmulatorEvent (..))
 import           Plutus.Trace.Scheduler        (Priority (..), SysCall (..), SystemCall, fork, mkSysCall, sleep)
-import           Wallet.Emulator.Wallet                        (Wallet(..))
-import Wallet.Emulator.ChainIndex (chainIndexNotify)
-import Wallet.Emulator.NodeClient (clientNotify, ChainClientNotification(..))
+import           Wallet.Emulator.ChainIndex    (chainIndexNotify)
+import           Wallet.Emulator.NodeClient    (ChainClientNotification (..), clientNotify)
+import           Wallet.Emulator.Wallet        (Wallet (..))
 
 launchSystemThreads :: forall effs.
     ( Member ChainControlEffect effs
