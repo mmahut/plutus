@@ -39,13 +39,30 @@ import           Plutus.Trace.Emulator.Types                   (ContractConstrai
 import           Plutus.Trace.Scheduler                        (Priority (..), SysCall (..), ThreadId, mkSysCall, sleep)
 import           Wallet.Emulator.MultiAgent                    (EmulatedWalletEffects, MultiAgentEffect, walletAction)
 import           Wallet.Emulator.Wallet                        (Wallet)
-import           Wallet.Types                                  (ContractInstanceId)
+import           Wallet.Types                                  (ContractInstanceId, Notification(..))
+import Wallet.Effects (ContractRuntimeEffect(..))
 
 -- | Effects available to threads that run in the context of specific
 --   agents (ie wallets)
 type ContractInstanceThreadEffs s e a effs =
     State (ContractInstanceState s e a)
+    ': ContractRuntimeEffect
     ': EmulatorAgentThreadEffs effs
+
+handleContractRuntime ::
+    forall effs.
+    Member (State EmulatorThreads) effs
+    => Eff (ContractRuntimeEffect ': effs)
+    ~> Eff effs
+handleContractRuntime = interpret $ \case
+    SendNotification n@Notification{notificationContractID} -> do
+        threadId <- gets (view $ instanceIdThreads . at notificationContractID)
+        case threadId of
+            Nothing -> undefined -- fixme return error
+            Just threadId -> do
+                let e = Message threadId (Notify n)
+                _ <- mkSysCall @effs @EmulatorEvent High e
+                pure _
 
 contractThread :: forall s e effs.
     ( Member (State EmulatorThreads) effs
@@ -57,9 +74,11 @@ contractThread :: forall s e effs.
     -> Eff (EmulatorAgentThreadEffs effs) ()
 contractThread ContractHandle{chInstanceId, chContract} = do
     ask @ThreadId >>= registerInstance chInstanceId
-    evalState (emptyInstanceState chContract) $ do
-        msg <- mkSysCall @effs @EmulatorEvent Low Suspend
-        runInstance msg
+    handleContractRuntime
+        $ evalState (emptyInstanceState chContract)
+        $ do
+            msg <- mkSysCall @effs @EmulatorEvent Low Suspend
+            runInstance msg
 
 registerInstance :: forall effs.
     ( Member (State EmulatorThreads) effs )
@@ -160,6 +179,7 @@ respondToRequest :: forall s e a effs.
     ( Member (State (ContractInstanceState s e a)) effs
     , Member MultiAgentEffect effs
     , Member (Reader Wallet) effs
+    , Member ContractRuntimeEffect effs
     )
     => RequestHandler EmulatedWalletEffects (Handlers s) (Event s)
     -- ^ How to respond to the requests.

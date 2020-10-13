@@ -44,7 +44,7 @@ import           Ledger.Value                    (Value)
 import           Plutus.Trace.Scheduler          (SystemCall, ThreadId)
 import           Plutus.Trace.Types              (Simulator (..), SimulatorBackend (..))
 import           Wallet.Emulator.Wallet          (Wallet (..))
-import           Wallet.Types                    (ContractInstanceId)
+import           Wallet.Types                    (ContractInstanceId, Notification)
 
 type ContractConstraints s =
     ( V.Forall (Output s) V.Unconstrained1
@@ -59,6 +59,7 @@ data EmulatorEvent =
     BlockAdded [Tx]
     | NewSlot Slot
     | EndpointCall JSON.Value
+    | Notify Notification
     deriving stock Eq
 
 -- | A map of contract instance ID to thread ID

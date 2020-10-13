@@ -69,6 +69,9 @@ interpretSimulatorEm action =
             launchSystemThreads
             interpret (handleSimulator emInterpreter) $ raiseEnd action
 
+-- MultiAgent & EmulatorContractNotify need to be *before* the Yield effect
+-- (so that notifications can be sent!)
+
 emInterpreter :: forall effs.
     ( Member ContractInstanceIdEff effs
     , Member (State EmulatorThreads) effs
