@@ -89,8 +89,9 @@ import           Control.Monad                                     (guard, repli
 import           Control.Monad.Freer
 import           Control.Monad.Freer.Error                         (Error, runError, throwError)
 import qualified Control.Monad.Freer.Extras                        as Eff
-import           Control.Monad.Freer.Log                           (LogMessage, LogMsg, handleLogWriter, logWarn,
-                                                                    mapMLog)
+import           Control.Monad.Freer.Log                           (LogMessage, LogMsg, LogObserve, handleLogWriter,
+                                                                    logWarn, mapMLog)
+import           Control.Monad.Freer.Reader                        (Reader, runReader)
 import           Control.Monad.Freer.State                         (State, gets, runState)
 import           Control.Monad.Freer.Writer                        (Writer)
 import qualified Data.Aeson.Types                                  as JSON
@@ -109,6 +110,7 @@ import           Data.Text.Prettyprint.Doc                         (Pretty, pret
 import           Data.Void                                         (Void)
 import           GHC.Generics                                      (Generic)
 
+import           Data.Text                                         (Text)
 import           Language.Plutus.Contract                          (Contract (..), HasAwaitSlot, HasTxConfirmation,
                                                                     HasUtxoAt, HasWatchAddress, HasWriteTx, mapError)
 import           Language.Plutus.Contract.Checkpoint               (CheckpointStore)
@@ -133,8 +135,8 @@ import qualified Language.Plutus.Contract.Effects.WatchAddress     as WatchAddre
 import qualified Language.Plutus.Contract.Effects.WriteTx          as WriteTx
 import           Language.Plutus.Contract.Resumable                (Request (..), Requests (..), Response (..))
 import           Language.Plutus.Contract.Trace.RequestHandler     (MaxIterations (..), RequestHandler (..),
-                                                                    defaultMaxIterations, maybeToHandler, tryHandler,
-                                                                    wrapHandler)
+                                                                    RequestHandlerLogMsg, defaultMaxIterations,
+                                                                    maybeToHandler, tryHandler, wrapHandler)
 import qualified Language.Plutus.Contract.Trace.RequestHandler     as RequestHandler
 import           Language.Plutus.Contract.Types                    (ResumableResult (..))
 
@@ -143,9 +145,13 @@ import           Ledger.Address                                    (Address)
 import           Ledger.Slot                                       (Slot (..))
 import           Ledger.Value                                      (Value)
 
-import           Wallet.API                                        (defaultSlotRange, payToPublicKey_)
+import           Wallet.API                                        (ChainIndexEffect, SigningProcessEffect,
+                                                                    defaultSlotRange, payToPublicKey_)
+import           Wallet.Effects                                    (ContractRuntimeEffect (SendNotification),
+                                                                    WalletEffect)
 import           Wallet.Emulator                                   (EmulatorState, TxPool, Wallet)
 import qualified Wallet.Emulator                                   as EM
+import           Wallet.Emulator.LogMessages                       (TxBalanceMsg)
 import           Wallet.Emulator.MultiAgent                        (EmulatedWalletEffects, _singleton)
 import qualified Wallet.Emulator.MultiAgent                        as EM
 import           Wallet.Emulator.Notify                            (EmulatorContractNotifyEffect (..),
@@ -543,12 +549,13 @@ respondToRequest ::
     forall s e a.
     Wallet
     -- ^ The wallet
-    -> RequestHandler EmulatedWalletEffects (Handlers s) (Event s)
+    -> RequestHandler (Reader ContractInstanceId ': ContractRuntimeEffect ': EmulatedWalletEffects) (Handlers s) (Event s)
     -- ^ How to respond to the requests.
     -> ContractTrace s e a (Maybe (Response (Event s)))
 respondToRequest wallet f = do
     hks <- getHooks @s @e @a wallet
-    (response :: Maybe (Response (Event s))) <- runWallet @s @e @a wallet $ tryHandler (wrapHandler f) hks
+    let rsp = interpret (\case {SendNotification _ -> undefined }) $ runReader (undefined :: ContractInstanceId) $ tryHandler (wrapHandler f) hks
+    (response :: Maybe (Response (Event s))) <- runWallet @s @e @a wallet rsp
     traverse_ (addResponse @s @e @a wallet) response
     pure response
 
@@ -562,8 +569,11 @@ interestingAddresses wllt =
 
 handleSlotNotifications ::
     ( HasAwaitSlot s
+    , Member (LogObserve (LogMessage Text)) effs
+    , Member (LogMsg RequestHandlerLogMsg) effs
+    , Member WalletEffect effs
     )
-    => RequestHandler EmulatedWalletEffects (Handlers s) (Event s)
+    => RequestHandler effs (Handlers s) (Event s)
 handleSlotNotifications =
     maybeToHandler AwaitSlot.request
     >>> RequestHandler.handleSlotNotifications
@@ -701,7 +711,7 @@ handleBlockchainQueries ::
     , HasOwnId s
     , HasContractNotify s
     )
-    => RequestHandler EmulatedWalletEffects (Handlers s) (Event s)
+    => RequestHandler (Reader ContractInstanceId ': ContractRuntimeEffect ': EmulatedWalletEffects) (Handlers s) (Event s)
 handleBlockchainQueries =
     handlePendingTransactions
     <> handleUtxoQueries
@@ -716,8 +726,14 @@ handleBlockchainQueries =
 --   UTXO queries
 handlePendingTransactions ::
     ( HasWriteTx s
+    , Member (LogObserve (LogMessage Text)) effs
+    , Member (LogMsg RequestHandlerLogMsg) effs
+    , Member WalletEffect effs
+    , Member SigningProcessEffect effs
+    , Member ChainIndexEffect effs
+    , Member (LogMsg TxBalanceMsg) effs
     )
-    => RequestHandler EmulatedWalletEffects (Handlers s) (Event s)
+    => RequestHandler effs (Handlers s) (Event s)
 handlePendingTransactions =
     maybeToHandler WriteTx.pendingTransaction
     >>> RequestHandler.handlePendingTransactions
@@ -727,8 +743,10 @@ handlePendingTransactions =
 --   with the current UTXO set at the given address.
 handleUtxoQueries ::
     ( HasUtxoAt s
+    , Member (LogObserve (LogMessage Text)) effs
+    , Member ChainIndexEffect effs
     )
-    => RequestHandler EmulatedWalletEffects (Handlers s) (Event s)
+    => RequestHandler effs (Handlers s) (Event s)
 handleUtxoQueries =
     maybeToHandler UtxoAt.utxoAtRequest
     >>> RequestHandler.handleUtxoQueries
@@ -736,17 +754,23 @@ handleUtxoQueries =
 
 handleTxConfirmedQueries ::
     ( HasTxConfirmation s
+    , Member (LogObserve (LogMessage Text)) effs
+    , Member ChainIndexEffect effs
     )
-    => RequestHandler EmulatedWalletEffects (Handlers s) (Event s)
+    => RequestHandler effs (Handlers s) (Event s)
 handleTxConfirmedQueries =
     maybeToHandler AwaitTxConfirmed.txId
     >>> RequestHandler.handleTxConfirmedQueries
     >>^ AwaitTxConfirmed.event . unTxConfirmed
 
-handleNextTxAtQueries
-    :: ( HasWatchAddress s
-       )
-    => RequestHandler EmulatedWalletEffects (Handlers s) (Event s)
+handleNextTxAtQueries ::
+    ( HasWatchAddress s
+    , Member (LogObserve (LogMessage Text)) effs
+    , Member (LogMsg RequestHandlerLogMsg) effs
+    , Member WalletEffect effs
+    , Member ChainIndexEffect effs
+    )
+    => RequestHandler effs (Handlers s) (Event s)
 handleNextTxAtQueries =
     maybeToHandler WatchAddress.watchAddressRequest
     >>> RequestHandler.handleNextTxAtQueries
@@ -754,24 +778,32 @@ handleNextTxAtQueries =
 
 handleOwnPubKeyQueries ::
     ( HasOwnPubKey s
+    , Member (LogObserve (LogMessage Text)) effs
+    , Member WalletEffect effs
     )
-    => RequestHandler EmulatedWalletEffects (Handlers s) (Event s)
+    => RequestHandler effs (Handlers s) (Event s)
 handleOwnPubKeyQueries =
     maybeToHandler OwnPubKey.request
     >>> RequestHandler.handleOwnPubKey
     >>^ OwnPubKey.event
 
 handleOwnInstanceIdQueries ::
-    ( HasOwnId s )
-    => RequestHandler EmulatedWalletEffects (Handlers s) (Event s)
+    ( HasOwnId s
+    , Member (LogObserve (LogMessage Text)) effs
+    , Member (Reader ContractInstanceId) effs
+    )
+    => RequestHandler effs (Handlers s) (Event s)
 handleOwnInstanceIdQueries =
     maybeToHandler OwnInstance.request
     >>> RequestHandler.handleOwnInstanceIdQueries
     >>^ OwnInstance.event
 
 handleContractNotifications ::
-    ( HasContractNotify s )
-    => RequestHandler EmulatedWalletEffects (Handlers s) (Event s)
+    ( HasContractNotify s
+    , Member (LogObserve (LogMessage Text)) effs
+    , Member ContractRuntimeEffect effs
+    )
+    => RequestHandler effs (Handlers s) (Event s)
 handleContractNotifications =
     maybeToHandler Notify.request
     >>> RequestHandler.handleContractNotifications

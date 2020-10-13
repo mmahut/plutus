@@ -5,6 +5,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
@@ -19,34 +20,44 @@ module Plutus.Trace.Emulator.ContractInstance(
 import           Control.Lens
 import           Control.Monad                                 (guard, unless, void)
 import           Control.Monad.Freer
+import           Control.Monad.Freer.Coroutine                 (Yield)
 import           Control.Monad.Freer.Error                     (Error, throwError)
-import           Control.Monad.Freer.Reader                    (Reader, ask)
+import           Control.Monad.Freer.Extras                    (raiseEnd11)
+import           Control.Monad.Freer.Log                       (LogMessage, LogMsg, LogObserve)
+import           Control.Monad.Freer.Reader                    (Reader, ask, runReader)
 import           Control.Monad.Freer.State                     (State, evalState, gets, modify)
 import qualified Data.Aeson.Types                              as JSON
 import           Data.Foldable                                 (traverse_)
 import           Data.Sequence                                 (Seq)
+import qualified Data.Text                                     as T
 import           Language.Plutus.Contract                      (Contract (..))
 import           Language.Plutus.Contract.Resumable            (Request (..), Requests (..), Response (..))
-import Control.Monad.Freer.Coroutine (Yield)
 import qualified Language.Plutus.Contract.Resumable            as State
 import           Language.Plutus.Contract.Schema               (Event (..), Handlers (..), eventName, handlerName)
 import           Language.Plutus.Contract.Trace                (handleBlockchainQueries, handleSlotNotifications)
-import           Language.Plutus.Contract.Trace.RequestHandler (RequestHandler (..), tryHandler, wrapHandler)
+import           Language.Plutus.Contract.Trace.RequestHandler (RequestHandler (..), RequestHandlerLogMsg, tryHandler,
+                                                                wrapHandler)
 import           Language.Plutus.Contract.Types                (ResumableResult (..))
 import qualified Language.Plutus.Contract.Types                as Contract.Types
 import           Plutus.Trace.Emulator.Types                   (ContractConstraints, ContractHandle (..),
                                                                 EmulatorAgentThreadEffs, EmulatorEvent (..),
                                                                 EmulatorThreads, instanceIdThreads)
-import           Plutus.Trace.Scheduler                        (Priority (..), SysCall (..), ThreadId, mkSysCall, sleep, SystemCall)
+import           Plutus.Trace.Scheduler                        (Priority (..), SysCall (..), SystemCall, ThreadId,
+                                                                mkSysCall, sleep)
+import qualified Wallet.API                                    as WAPI
+import           Wallet.Effects                                (ChainIndexEffect, ContractRuntimeEffect (..),
+                                                                NodeClientEffect, SigningProcessEffect, WalletEffect)
+import           Wallet.Emulator.LogMessages                   (TxBalanceMsg)
 import           Wallet.Emulator.MultiAgent                    (EmulatedWalletEffects, MultiAgentEffect, walletAction)
 import           Wallet.Emulator.Wallet                        (Wallet)
-import           Wallet.Types                                  (ContractInstanceId, Notification(..), NotificationError(..))
-import Wallet.Effects (ContractRuntimeEffect(..))
+import           Wallet.Types                                  (ContractInstanceId, Notification (..),
+                                                                NotificationError (..))
 
 -- | Effects available to threads that run in the context of specific
 --   agents (ie wallets)
 type ContractInstanceThreadEffs s e a effs =
     State (ContractInstanceState s e a)
+    ': Reader ContractInstanceId
     ': ContractRuntimeEffect
     ': EmulatorAgentThreadEffs effs
 
@@ -78,6 +89,7 @@ contractThread :: forall s e effs.
 contractThread ContractHandle{chInstanceId, chContract} = do
     ask @ThreadId >>= registerInstance chInstanceId
     handleContractRuntime @effs
+        $ runReader chInstanceId
         $ evalState (emptyInstanceState chContract)
         $ do
             msg <- mkSysCall @effs @EmulatorEvent Low Suspend
@@ -175,6 +187,29 @@ addResponse
     -> Eff effs ()
 addResponse e = modify @(ContractInstanceState s e a) $ addEventInstanceState e
 
+raiseWallet :: forall f effs.
+    ( Member f EmulatedWalletEffects
+    , Member MultiAgentEffect effs
+    )
+    => Wallet
+    -> f
+    ~> Eff effs
+raiseWallet wllt = walletAction wllt . send
+
+type ContractInstanceRequests effs =
+        Reader ContractInstanceId
+         ': ContractRuntimeEffect
+         ': WalletEffect
+         ': Error WAPI.WalletAPIError
+         ': NodeClientEffect
+         ': ChainIndexEffect
+         ': SigningProcessEffect
+         ': LogObserve (LogMessage T.Text)
+         ': LogMsg RequestHandlerLogMsg
+         ': LogMsg TxBalanceMsg
+         ': LogMsg T.Text
+         ': effs
+
 -- | Inspect the open requests of a contract instance,
 --   and maybe respond to them. Returns the response that was provided to the
 --   contract, if any.
@@ -183,14 +218,30 @@ respondToRequest :: forall s e a effs.
     , Member MultiAgentEffect effs
     , Member (Reader Wallet) effs
     , Member ContractRuntimeEffect effs
+    , Member (Reader ContractInstanceId) effs
     )
-    => RequestHandler EmulatedWalletEffects (Handlers s) (Event s)
+    => RequestHandler (Reader ContractInstanceId ': ContractRuntimeEffect ': EmulatedWalletEffects) (Handlers s) (Event s)
     -- ^ How to respond to the requests.
     ->  Eff effs (Maybe (Response (Event s)))
 respondToRequest f = do
     hks <- getHooks @s @e @a
     ownWallet <- ask @Wallet
-    (response :: Maybe (Response (Event s))) <- walletAction ownWallet $ tryHandler (wrapHandler f) hks
+    let hdl :: (Eff (Reader ContractInstanceId ': ContractRuntimeEffect ': EmulatedWalletEffects) (Maybe (Response (Event s)))) = tryHandler (wrapHandler f) hks
+        hdl' :: (Eff (ContractInstanceRequests effs) (Maybe (Response (Event s)))) = raiseEnd11 hdl
+
+        response_ :: Eff effs (Maybe (Response (Event s))) =
+            interpret (raiseWallet @(LogMsg T.Text) ownWallet)
+                $ interpret (raiseWallet @(LogMsg TxBalanceMsg) ownWallet)
+                $ interpret (raiseWallet @(LogMsg RequestHandlerLogMsg) ownWallet)
+                $ interpret (raiseWallet @(LogObserve (LogMessage T.Text)) ownWallet)
+                $ interpret (raiseWallet @SigningProcessEffect ownWallet)
+                $ interpret (raiseWallet @ChainIndexEffect ownWallet)
+                $ interpret (raiseWallet @NodeClientEffect ownWallet)
+                $ interpret (raiseWallet @(Error WAPI.WalletAPIError) ownWallet)
+                $ interpret (raiseWallet @WalletEffect ownWallet)
+                $ subsume @ContractRuntimeEffect
+                $ subsume @(Reader ContractInstanceId) hdl'
+    response <- response_
     traverse_ (addResponse @s @e @a) response
     pure response
 

@@ -113,8 +113,6 @@ type EmulatedWalletEffects =
          , Wallet.NodeClientEffect
          , Wallet.ChainIndexEffect
          , Wallet.SigningProcessEffect
-         , Wallet.ContractRuntimeEffect
-         , Reader ContractInstanceId
          , LogObserve (LogMessage T.Text)
          , LogMsg RequestHandlerLogMsg
          , LogMsg TxBalanceMsg
@@ -313,14 +311,12 @@ handleMultiAgent = interpret $ \case
             p7 :: AReview [LogMessage EmulatorEvent] (LogMessage Notify.EmulatorNotifyLogMsg)
             p7 = _singleton . below (timed . notificationEvent)
         act
-            & raiseEnd11
+            & raiseEnd9
             & Wallet.handleWallet
             & subsume
             & NC.handleNodeClient
             & ChainIndex.handleChainIndex
             & SP.handleSigningProcess
-            & interpret (Notify.handleContractRuntime wallet)
-            & runReader (Notify.walletInstanceId wallet)
             & handleObserveLog
             & interpret (handleLogWriter p5)
             & interpret (handleLogWriter p6)
