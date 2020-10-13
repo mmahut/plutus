@@ -25,7 +25,6 @@ import           Control.Monad.Freer.Extras
 import           Control.Monad.Freer.Log        (LogLevel (..), LogMessage, LogMsg, LogObserve, handleLogWriter,
                                                  handleObserveLog, logMessage)
 import qualified Control.Monad.Freer.Log        as Log
-import           Control.Monad.Freer.Reader
 import           Control.Monad.Freer.State
 import           Data.Aeson                     (FromJSON, ToJSON)
 import           Data.Map                       (Map)
@@ -46,7 +45,7 @@ import qualified Wallet.Emulator.NodeClient     as NC
 import qualified Wallet.Emulator.Notify         as Notify
 import qualified Wallet.Emulator.SigningProcess as SP
 import qualified Wallet.Emulator.Wallet         as Wallet
-import           Wallet.Types                   (AssertionError (..), ContractInstanceId)
+import           Wallet.Types                   (AssertionError (..))
 
 -- | Assertions which will be checked during execution of the emulator.
 data Assertion

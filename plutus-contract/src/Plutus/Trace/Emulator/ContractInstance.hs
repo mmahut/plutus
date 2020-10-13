@@ -34,7 +34,7 @@ import           Language.Plutus.Contract                      (Contract (..))
 import           Language.Plutus.Contract.Resumable            (Request (..), Requests (..), Response (..))
 import qualified Language.Plutus.Contract.Resumable            as State
 import           Language.Plutus.Contract.Schema               (Event (..), Handlers (..), eventName, handlerName)
-import           Language.Plutus.Contract.Trace                (handleBlockchainQueries, handleSlotNotifications)
+import           Language.Plutus.Contract.Trace                (handleBlockchainQueries)
 import           Language.Plutus.Contract.Trace.RequestHandler (RequestHandler (..), RequestHandlerLogMsg, tryHandler,
                                                                 wrapHandler)
 import           Language.Plutus.Contract.Types                (ResumableResult (..))
@@ -159,7 +159,7 @@ runInstance event = do
                 sleep @effs Low >>= runInstance
             _ -> do
                 -- FIXME: handleSlotNotifications configurable
-                responses <- respondToRequest @s @e @a (handleBlockchainQueries <> handleSlotNotifications)
+                responses <- respondToRequest @s @e @a handleBlockchainQueries
                 let prio =
                         maybe
                             -- If no events could be handled we go to sleep

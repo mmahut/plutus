@@ -45,6 +45,7 @@ import           Plutus.Trace.Scheduler          (SystemCall, ThreadId)
 import           Plutus.Trace.Types              (Simulator (..), SimulatorBackend (..))
 import           Wallet.Emulator.Wallet          (Wallet (..))
 import           Wallet.Types                    (ContractInstanceId, Notification)
+import Wallet.Emulator.SigningProcess (SigningProcess)
 
 type ContractConstraints s =
     ( V.Forall (Output s) V.Unconstrained1
@@ -89,6 +90,7 @@ data EmulatorLocal r where
     ActivateContract :: ContractConstraints s => Contract s e () -> EmulatorLocal (ContractHandle s e)
     CallEndpointEm :: forall l ep s e. (ContractConstraints s, HasEndpoint l ep s) => Proxy l -> ContractHandle s e -> ep -> EmulatorLocal ()
     PayToWallet :: Wallet -> Value -> EmulatorLocal ()
+    SetSigningProcess :: SigningProcess -> EmulatorLocal ()
 
 data EmulatorGlobal r where
     WaitUntilSlot :: Slot -> EmulatorGlobal Slot

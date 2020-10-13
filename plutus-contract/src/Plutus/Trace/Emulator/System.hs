@@ -35,6 +35,8 @@ launchSystemThreads = do
     -- 2. Threads for updating the agents' states
     traverse_ (fork @effs @EmulatorEvent Low . agentThread @effs) (Wallet <$> [1..10])
 
+-- parameters :: Map Wallet InitialDistribution
+
 blockMaker :: forall effs effs2.
     ( Member ChainControlEffect effs2
     , Member ChainEffect effs2

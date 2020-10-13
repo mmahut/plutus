@@ -51,6 +51,53 @@ import           Plutus.Trace.Emulator.Types                     (ContractConstr
 import qualified Plutus.Trace.Emulator.Types                     as Types
 import           Plutus.Trace.Types
 
+
+-- runTraceWithInitialStates ::
+--     forall s e a b.
+--     ( V.AllUniqueLabels (Input s)
+--     , V.Forall (Input s) JSON.FromJSON
+--     , V.Forall (Output s) V.Unconstrained1
+--     )
+--     => EmulatorState
+--     -> ContractTraceState s (TraceError e) a
+--     -> Eff (ContractTraceEffs s e a) b
+--     -> (Either (TraceError e) (b, ContractTraceState s (TraceError e) a), EmulatorState)
+-- runTraceWithInitialStates initialEmulatorState initialContractState action =
+--     EM.runEmulator initialEmulatorState
+--         $ runState initialContractState
+--         $ interpret (Eff.writeIntoState EM.emulatorLog)
+--         $ reinterpret @_ @(Writer [LogMessage EM.EmulatorEvent]) (handleLogWriter _singleton)
+--         $ reinterpret @_ @(LogMsg EM.EmulatorEvent) (mapMLog makeTimed)
+--         $ reinterpret @_ @(LogMsg EmulatorNotifyLogMsg) (handleEmulatorContractNotify @s @e @a)
+--         $ action
+
+-- makeTimed :: Member (State EmulatorState) effs => EmulatorNotifyLogMsg -> Eff effs EM.EmulatorEvent
+-- makeTimed e = do
+--     emulatorTime <- gets (view (EM.chainState . EM.currentSlot))
+--     pure $ review (EM.emulatorTimeEvent emulatorTime) (EM.NotificationEvent e)
+
+-- -- | Run a trace in the emulator and return the final state alongside the
+-- --   result
+-- runTraceWithDistribution ::
+--     forall s e a b.
+--     ( V.AllUniqueLabels (Input s)
+--     , V.Forall (Input s) JSON.FromJSON
+--     , V.Forall (Output s) V.Unconstrained1
+--     )
+--     => InitialDistribution
+--     -> Contract s e a
+--     -> Eff (ContractTraceEffs s e a) b
+--     -> (Either (TraceError e) (b, ContractTraceState s (TraceError e) a), EmulatorState)
+-- runTraceWithDistribution dist con action =
+--     let -- make sure the wallets know about the initial transaction
+--         notifyInitial = void (EM.addBlocksAndNotify (Map.keys dist) 1)
+--         action' = EM.processEmulated @(TraceError e) notifyInitial >> action
+--         con' = mapError TContractError con
+--         s = EM.emulatorStateInitialDist (Map.mapKeys EM.walletPubKey dist)
+--         c = initState (Map.keys dist) con'
+--     in runTraceWithInitialStates s c action'
+
+
 -- | Interpret a 'Simulator Emulator' action in the multi agent and emulated
 --   blockchain effects.
 interpretSimulatorEm :: forall effs.
