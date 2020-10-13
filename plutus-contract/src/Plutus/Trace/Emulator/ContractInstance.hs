@@ -27,6 +27,7 @@ import           Data.Foldable                                 (traverse_)
 import           Data.Sequence                                 (Seq)
 import           Language.Plutus.Contract                      (Contract (..))
 import           Language.Plutus.Contract.Resumable            (Request (..), Requests (..), Response (..))
+import Control.Monad.Freer.Coroutine (Yield)
 import qualified Language.Plutus.Contract.Resumable            as State
 import           Language.Plutus.Contract.Schema               (Event (..), Handlers (..), eventName, handlerName)
 import           Language.Plutus.Contract.Trace                (handleBlockchainQueries, handleSlotNotifications)
@@ -36,10 +37,10 @@ import qualified Language.Plutus.Contract.Types                as Contract.Types
 import           Plutus.Trace.Emulator.Types                   (ContractConstraints, ContractHandle (..),
                                                                 EmulatorAgentThreadEffs, EmulatorEvent (..),
                                                                 EmulatorThreads, instanceIdThreads)
-import           Plutus.Trace.Scheduler                        (Priority (..), SysCall (..), ThreadId, mkSysCall, sleep)
+import           Plutus.Trace.Scheduler                        (Priority (..), SysCall (..), ThreadId, mkSysCall, sleep, SystemCall)
 import           Wallet.Emulator.MultiAgent                    (EmulatedWalletEffects, MultiAgentEffect, walletAction)
 import           Wallet.Emulator.Wallet                        (Wallet)
-import           Wallet.Types                                  (ContractInstanceId, Notification(..))
+import           Wallet.Types                                  (ContractInstanceId, Notification(..), NotificationError(..))
 import Wallet.Effects (ContractRuntimeEffect(..))
 
 -- | Effects available to threads that run in the context of specific
@@ -50,19 +51,21 @@ type ContractInstanceThreadEffs s e a effs =
     ': EmulatorAgentThreadEffs effs
 
 handleContractRuntime ::
-    forall effs.
-    Member (State EmulatorThreads) effs
-    => Eff (ContractRuntimeEffect ': effs)
-    ~> Eff effs
+    forall effs effs2.
+    ( Member (State EmulatorThreads) effs2
+    , Member (Yield (SystemCall effs EmulatorEvent) (Maybe EmulatorEvent)) effs2
+    )
+    => Eff (ContractRuntimeEffect ': effs2)
+    ~> Eff effs2
 handleContractRuntime = interpret $ \case
     SendNotification n@Notification{notificationContractID} -> do
-        threadId <- gets (view $ instanceIdThreads . at notificationContractID)
-        case threadId of
-            Nothing -> undefined -- fixme return error
+        target <- gets (view $ instanceIdThreads . at notificationContractID)
+        case target of
+            Nothing -> pure $ Just $ InstanceDoesNotExist notificationContractID
             Just threadId -> do
                 let e = Message threadId (Notify n)
                 _ <- mkSysCall @effs @EmulatorEvent High e
-                pure _
+                pure Nothing
 
 contractThread :: forall s e effs.
     ( Member (State EmulatorThreads) effs
@@ -74,7 +77,7 @@ contractThread :: forall s e effs.
     -> Eff (EmulatorAgentThreadEffs effs) ()
 contractThread ContractHandle{chInstanceId, chContract} = do
     ask @ThreadId >>= registerInstance chInstanceId
-    handleContractRuntime
+    handleContractRuntime @effs
         $ evalState (emptyInstanceState chContract)
         $ do
             msg <- mkSysCall @effs @EmulatorEvent Low Suspend
