@@ -31,12 +31,11 @@ launchSystemThreads :: forall effs.
     )
     => Eff (Yield (SystemCall effs EmulatorEvent) (Maybe EmulatorEvent) ': effs) ()
 launchSystemThreads = do
-    _ <- Trace.trace "launch system Threads: Sleep" (sleep @effs @EmulatorEvent Sleeping)
+    _ <- sleep @effs @EmulatorEvent Sleeping
     -- 1. Block maker
-    _ <- Trace.trace "starting block maker" (fork @effs @EmulatorEvent System Low (Trace.trace "block maker thread" (blockMaker @effs)))
+    _ <- fork @effs @EmulatorEvent System High (blockMaker @effs)
     -- 2. Threads for updating the agents' states
-    traverse_ (Trace.trace "starting agent thread" . fork @effs @EmulatorEvent System Low . agentThread @effs) (Wallet <$> [1])
-    Trace.trace ("launchSystemThreads: Done") (pure ())
+    traverse_ (fork @effs @EmulatorEvent System Low . agentThread @effs) (Wallet <$> [1])
 
 blockMaker :: forall effs effs2.
     ( Member ChainControlEffect effs2
@@ -46,11 +45,10 @@ blockMaker :: forall effs effs2.
     => Eff effs2 ()
 blockMaker = go where
     go = do
-        _ <- Trace.trace "blockMaker: 1" (mkSysCall @effs High (Broadcast $ BlockAdded []))
-        newBlock <- Trace.trace "process block" processBlock
-        _ <- mkSysCall @effs High (Broadcast $ BlockAdded newBlock)
+        newBlock <- processBlock
+        _ <- mkSysCall @effs Sleeping $ Broadcast $ BlockAdded newBlock
         newSlot <- getCurrentSlot
-        mkSysCall @effs Sleeping (Broadcast $ NewSlot newSlot)
+        mkSysCall @effs Sleeping $ Broadcast $ NewSlot newSlot
         go
 
 agentThread :: forall effs effs2.
@@ -61,7 +59,7 @@ agentThread :: forall effs effs2.
     -> Eff effs2 ()
 agentThread wllt = go where
     go = do
-        e <- Trace.trace "agent thread" (sleep @effs @EmulatorEvent Sleeping)
+        e <- sleep @effs @EmulatorEvent Sleeping
         let noti = e >>= \case
                 BlockAdded block -> Just $ BlockValidated block
                 NewSlot slot -> Just $ SlotChanged slot

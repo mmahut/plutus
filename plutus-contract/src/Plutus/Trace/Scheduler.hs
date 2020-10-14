@@ -138,7 +138,7 @@ mkThread prio action tid =
             { _priority = prio
             , _thread = EmThread
                 { _threadId = tid
-                , _continuation = Trace.trace ("mkThread: " <> show tid) (\_ -> runC action')
+                , _continuation = \_ -> runC action'
                 }
             }
 
@@ -147,7 +147,7 @@ mkSysCall :: forall effs systemEvent effs2.
     => Priority
     -> SysCall effs systemEvent
     -> Eff effs2 (Maybe systemEvent)
-mkSysCall prio sc = yield @(SystemCall effs systemEvent) @(Maybe systemEvent) (Trace.trace "mkSysCall" $ WithPriority prio sc) id
+mkSysCall prio sc = yield @(SystemCall effs systemEvent) @(Maybe systemEvent) (WithPriority prio sc) id
 
 -- | Start a new thread with the given priority
 fork :: forall effs systemEvent effs2.
@@ -156,7 +156,7 @@ fork :: forall effs systemEvent effs2.
     -> Priority
     -> Eff (Reader ThreadId ': Yield (SystemCall effs systemEvent) (Maybe systemEvent) ': effs) ()
     -> Eff effs2 (Maybe systemEvent)
-fork tp prio action = Trace.trace "FORK" (mkSysCall prio (Fork tp $ mkThread prio action))
+fork tp prio action = mkSysCall prio (Fork tp $ mkThread prio action)
 
 sleep :: forall effs systemEvent effs2.
     Member (Yield (SystemCall effs systemEvent) (Maybe systemEvent)) effs2
@@ -189,12 +189,12 @@ loop s = do
         AThread EmThread{_continuation, _threadId} event schedulerState | hasActiveUserThreads schedulerState -> do
             result <- _continuation event
             case result of
-                Done () -> Trace.trace ("loop: Thread done: " <> show _threadId) $ loop $ schedulerState & removeActiveThread _threadId
+                Done () -> loop $ schedulerState & removeActiveThread _threadId
                 Continue WithPriority{_priority, _thread=sysCall} k -> do
                     let thisThread = suspendThread _priority EmThread{_threadId=_threadId, _continuation=k}
                         newState = schedulerState & enqueue thisThread & handleSysCall sysCall
                     loop newState
-        _ -> Trace.trace "loop: Done" (pure ()) 
+        _ -> pure ()
 
 handleSysCall ::
     Eq systemEvent
@@ -204,16 +204,15 @@ handleSysCall ::
 handleSysCall sysCall schedulerState = case sysCall of
     Fork tp newThread ->
         let (schedulerState', tid) = nextThreadId schedulerState
-        in Trace.trace "Fork" (
-            enqueue (newThread tid) schedulerState'
+        in enqueue (newThread tid) schedulerState'
                 & activeThreads . at tp . non mempty %~ HashSet.insert tid
-                & mailboxes . at tid .~ Just Seq.empty)
+                & mailboxes . at tid .~ Just Seq.empty
     Suspend -> schedulerState
-    Broadcast msg -> Trace.trace "broadcast" (schedulerState & mailboxes . traversed %~ (|> msg))
-    Message t msg -> Trace.trace "message" (schedulerState & mailboxes . at t . non mempty %~ (|> msg))
+    Broadcast msg -> schedulerState & mailboxes . traversed %~ (|> msg)
+    Message t msg -> schedulerState & mailboxes . at t . non mempty %~ (|> msg)
 
 nextThreadId :: SchedulerState effs systemEvent -> (SchedulerState effs systemEvent, ThreadId)
-nextThreadId s = (s & lastThreadId %~ ThreadId . succ . unThreadId, let i = s ^. lastThreadId in Trace.trace ("nextThreadId: " <> show i) i)
+nextThreadId s = (s & lastThreadId %~ ThreadId . succ . unThreadId, s ^. lastThreadId)
 
 initialState :: SchedulerState effs systemEvent
 initialState = SchedulerState Seq.empty Seq.empty Seq.empty initialThreadId HashMap.empty Map.empty
@@ -221,18 +220,8 @@ initialState = SchedulerState Seq.empty Seq.empty Seq.empty initialThreadId Hash
 enqueue :: SuspendedThread effs systemEvent -> SchedulerState effs systemEvent -> SchedulerState effs systemEvent
 enqueue WithPriority {_priority, _thread} s =
     case _priority of
-        High     -> 
-            let s' = s & highPrio %~ (|> _thread)
-            in
-                if numThreads s == numThreads s'
-                    then (Trace.trace ("enqueue: High" <> desc s') s')
-                    else s'
-        Low      ->
-            let s' = s & lowPrio %~ (|> _thread)
-            in 
-                if numThreads s == numThreads s'
-                    then Trace.trace ("enqueue: Low" <> desc s') s'
-                    else s'
+        High     -> s & highPrio %~ (|> _thread)
+        Low      ->s & lowPrio %~ (|> _thread)
         Sleeping -> s & sleeping %~ (|> _thread)
 
 -- | Result of calling 'dequeue'. Either a thread that is ready to receive a message,
@@ -251,9 +240,9 @@ dequeue s = case dequeueThread s of
 dequeueThread :: SchedulerState effs systemEvent -> Maybe (SchedulerState effs systemEvent, EmThread effs systemEvent)
 dequeueThread s =
     case s ^. highPrio of
-        x :<| xs -> Trace.trace ("Dequeue: highPrio " <> desc s) (Just (s & highPrio .~ xs, x))
+        x :<| xs -> Just (s & highPrio .~ xs, x)
         Empty -> case s ^. lowPrio of
-            x :<| xs -> Trace.trace ("Dequeue: lowPrio " <> desc s) $ Just (s & lowPrio .~ xs, x)
+            x :<| xs -> Just (s & lowPrio .~ xs, x)
             Empty -> case s ^. sleeping of
                 x :<| xs -> Just (s & sleeping .~ xs, x)
                 Empty  -> Nothing

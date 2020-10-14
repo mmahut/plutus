@@ -55,8 +55,6 @@ module Wallet.Emulator.Types(
     emulatorState,
     emulatorStatePool,
     emulatorStateInitialDist,
-    chainNewestFirst,
-    chainOldestFirst,
     txPool,
     walletStates,
     walletClientStates,

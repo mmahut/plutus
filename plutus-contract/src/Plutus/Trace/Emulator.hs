@@ -191,4 +191,4 @@ emRunGlobal :: forall b effs.
     -> Eff (Yield (SystemCall effs EmulatorEvent) (Maybe EmulatorEvent) ': effs) b
 emRunGlobal = \case
     WaitUntilSlot s -> go where
-        go = (Trace.trace "wait until slot" (sleep @effs Sleeping)) >>= \case { Just (NewSlot sl) | sl >= s -> pure sl; _ -> go }
+        go = sleep @effs Sleeping >>= \case { Just (NewSlot sl) | sl >= s -> pure sl; _ -> go }
