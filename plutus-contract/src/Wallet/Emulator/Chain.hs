@@ -80,8 +80,8 @@ getCurrentSlot = send GetCurrentSlot
 
 type ChainEffs = '[State ChainState, Writer [ChainEvent]]
 
-handleControlChain :: Members ChainEffs effs => Eff (ChainControlEffect ': effs) ~> Eff effs
-handleControlChain = interpret $ \case
+handleControlChain :: Members ChainEffs effs => ChainControlEffect ~> Eff effs
+handleControlChain = \case
     ProcessBlock -> do
         st <- get
         let pool  = st ^. txPool
@@ -98,8 +98,8 @@ handleControlChain = interpret $ \case
 
         pure block
 
-handleChain :: (Members ChainEffs effs) => Eff (ChainEffect ': effs) ~> Eff effs
-handleChain = interpret $ \case
+handleChain :: (Members ChainEffs effs) => ChainEffect ~> Eff effs
+handleChain = \case
     QueueTx tx -> modify $ over txPool (addTxToPool tx)
     GetCurrentSlot -> gets _currentSlot
 

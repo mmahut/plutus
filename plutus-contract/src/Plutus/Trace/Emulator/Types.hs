@@ -42,7 +42,7 @@ import           Ledger.Slot                     (Slot)
 import           Ledger.Tx                       (Tx)
 import           Ledger.Value                    (Value)
 import           Plutus.Trace.Scheduler          (SystemCall, ThreadId)
-import           Plutus.Trace.Types              (Simulator (..), SimulatorBackend (..))
+import           Plutus.Trace.Types              (Trace (..), TraceBackend (..))
 import           Wallet.Emulator.Wallet          (Wallet (..))
 import           Wallet.Types                    (ContractInstanceId, Notification)
 import Wallet.Emulator.SigningProcess (SigningProcess)
@@ -61,7 +61,7 @@ data EmulatorEvent =
     | NewSlot Slot
     | EndpointCall JSON.Value
     | Notify Notification
-    deriving stock Eq
+    deriving stock (Eq, Show)
 
 -- | A map of contract instance ID to thread ID
 newtype EmulatorThreads =
@@ -95,21 +95,21 @@ data EmulatorLocal r where
 data EmulatorGlobal r where
     WaitUntilSlot :: Slot -> EmulatorGlobal Slot
 
-instance SimulatorBackend Emulator where
+instance TraceBackend Emulator where
     type LocalAction Emulator = EmulatorLocal
     type GlobalAction Emulator = EmulatorGlobal
     type Agent Emulator = Wallet
 
-type EmulatorTrace a = Eff '[Simulator Emulator] a
+type EmulatorTrace a = Eff '[Trace Emulator] a
 
 activateContract :: forall s e. ContractConstraints s => Wallet -> Contract s e () -> EmulatorTrace (ContractHandle s e)
-activateContract wallet = send @(Simulator Emulator) . RunLocal wallet . ActivateContract
+activateContract wallet = send @(Trace Emulator) . RunLocal wallet . ActivateContract
 
 callEndpoint :: forall l ep s e. (ContractConstraints s, HasEndpoint l ep s) => Wallet -> ContractHandle s e -> ep -> EmulatorTrace ()
-callEndpoint wallet hdl = send @(Simulator Emulator) . RunLocal wallet . CallEndpointEm (Proxy @l) hdl
+callEndpoint wallet hdl = send @(Trace Emulator) . RunLocal wallet . CallEndpointEm (Proxy @l) hdl
 
 payToWallet :: Wallet -> Wallet -> Value -> EmulatorTrace ()
-payToWallet from_ to_ = send @(Simulator Emulator) . RunLocal from_ . PayToWallet to_
+payToWallet from_ to_ = send @(Trace Emulator) . RunLocal from_ . PayToWallet to_
 
 waitUntilSlot :: Slot -> EmulatorTrace Slot
-waitUntilSlot sl = send @(Simulator Emulator) $ RunGlobal (WaitUntilSlot sl)
+waitUntilSlot sl = send @(Trace Emulator) $ RunGlobal (WaitUntilSlot sl)

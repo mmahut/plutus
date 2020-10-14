@@ -115,6 +115,7 @@ getThread t = do
 data ContractInstanceError =
     ThreadIdNotFound ContractInstanceId
     | JSONDecodingError String
+    deriving Show
 
 data ContractInstanceState s e a =
     ContractInstanceState

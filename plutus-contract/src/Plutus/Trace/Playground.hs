@@ -24,14 +24,14 @@ data PlaygroundLocal r where
 data PlaygroundGlobal r where
    WaitForSlot :: Slot -> PlaygroundGlobal ()
 
-instance SimulatorBackend Playground where
+instance TraceBackend Playground where
     type LocalAction Playground = PlaygroundLocal
     type GlobalAction Playground = PlaygroundGlobal
     type Agent Playground = Wallet
 
 -- | Playground traces need to be serialisable, so they are just
 --   lists of single 'PlaygroundAction's.
-type PlaygroundAction = Simulator Playground ()
+type PlaygroundAction = Trace Playground ()
 type PlaygroundTrace = [PlaygroundAction]
 
 ptrace :: PlaygroundTrace

@@ -75,6 +75,7 @@ import           Control.Lens               hiding (index)
 import           Control.Monad.Except
 import           Control.Monad.Freer
 import           Control.Monad.Freer.Error  (Error)
+import Control.Monad.Freer.Writer (Writer)
 import qualified Control.Monad.Freer.Error  as Eff
 import qualified Control.Monad.Freer.Extras as Eff
 import           Control.Monad.Freer.Log    (LogLevel (..), LogMessage, logMessage)
@@ -136,31 +137,27 @@ type EmulatorBackend e =
     ]
 
 processEmulated :: forall e effs.
-    ( AsAssertionError e
-    , Member (Error e) effs
+    ( Member (Error WalletAPIError) effs
+    , Member (Error AssertionError) effs
     , Member (State EmulatorState) effs
-    , Member EmulatorContractNotifyEffect effs
     )
-    => Eff EmulatorEffs
+    => Eff (MultiAgentEffect ': ChainEffect ': ChainControlEffect ': effs)
     ~> Eff effs
 processEmulated act = do
     emulatorTime <- Eff.gets (view $ chainState . currentSlot)
     let
         p1 :: Prism' [LogMessage EmulatorEvent] [ChainEvent]
         p1 =  below (logMessage Info . emulatorTimeEvent emulatorTime . chainEvent)
-        p2 :: Prism' e AssertionError
-        p2 = _AssertionError
     act
-        & Eff.raiseEnd3
         & handleMultiAgent
-        & handleChain
-        & handleControlChain
-        & interpret (Eff.handleZoomedWriter p1)
+        & reinterpret3 @ChainEffect @(State ChainState) @(Writer [ChainEvent]) handleChain
         & interpret (Eff.handleZoomedState chainState)
+        & interpret (Eff.handleZoomedWriter p1)
         & interpret (Eff.writeIntoState emulatorLog)
-        -- HACK
-        & flip Eff.handleError (\(e :: WalletAPIError) -> Eff.throwError $ GenericAssertion $ T.pack $ show e)
-        & interpret (Eff.handleZoomedError p2)
+        & reinterpret3 @ChainControlEffect @(State ChainState) @(Writer [ChainEvent]) handleControlChain
+        & interpret (Eff.handleZoomedState chainState)
+        & interpret (Eff.handleZoomedWriter p1)
+        & interpret (Eff.writeIntoState emulatorLog)
 
 -- | Run a 'Eff (EmulatorBackend e)' action on an 'EmulatorState', returning
 --   the final state and either the result or an error.

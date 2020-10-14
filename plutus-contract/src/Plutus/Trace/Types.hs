@@ -15,13 +15,13 @@
 {-# LANGUAGE TypeOperators       #-}
 
 module Plutus.Trace.Types
-  ( SimulatorBackend (..),
-    Simulator (..),
+  ( TraceBackend (..),
+    Trace (..),
 
-    -- * Handling the 'Simulator' effect
-    SimulatorInterpreter (..),
-    handleSimulator,
-    runSimulator,
+    -- * Handling the 'Trace' effect
+    TraceInterpreter (..),
+    handleTrace,
+    runTrace,
   )
 where
 
@@ -30,34 +30,34 @@ import           Control.Monad.Freer.Coroutine
 import           Control.Monad.Freer.Extras
 import           Plutus.Trace.Scheduler
 
-class SimulatorBackend a where
+class TraceBackend a where
     type LocalAction a :: * -> *
     type GlobalAction a :: * -> *
     type Agent a
 
-data Simulator a b where
-    RunLocal :: SimulatorBackend a => Agent a -> LocalAction a b -> Simulator a b
-    RunGlobal :: SimulatorBackend a => GlobalAction a b -> Simulator a b
+data Trace a b where
+    RunLocal :: TraceBackend a => Agent a -> LocalAction a b -> Trace a b
+    RunGlobal :: TraceBackend a => GlobalAction a b -> Trace a b
 
-data SimulatorInterpreter a effs systemEvent
-    = SimulatorInterpreter
+data TraceInterpreter a effs systemEvent
+    = TraceInterpreter
         { _runLocal     :: forall b. Agent a -> LocalAction a b -> Eff (Yield (SystemCall effs systemEvent) (Maybe systemEvent) ': effs) b
         , _runGlobal    :: forall b. GlobalAction a b -> Eff (Yield (SystemCall effs systemEvent) (Maybe systemEvent) ': effs) b
         }
 
-handleSimulator ::
+handleTrace ::
     forall a effs systemEvent.
-    SimulatorInterpreter a effs systemEvent
-    -> Simulator a
+    TraceInterpreter a effs systemEvent
+    -> Trace a
     ~> Eff (Yield (SystemCall effs systemEvent) (Maybe systemEvent) ': effs)
-handleSimulator SimulatorInterpreter {_runGlobal, _runLocal} = \case
+handleTrace TraceInterpreter {_runGlobal, _runLocal} = \case
     RunLocal wllt localAction -> _runLocal wllt localAction
     RunGlobal globalAction -> _runGlobal globalAction
 
-runSimulator ::
+runTrace ::
     forall a effs systemEvent.
     Eq systemEvent
-    => SimulatorInterpreter a effs systemEvent
-    -> Eff '[Simulator a] ()
+    => TraceInterpreter a effs systemEvent
+    -> Eff '[Trace a] ()
     -> Eff effs ()
-runSimulator i = runThreads . interpret (handleSimulator i) . raiseEnd
+runTrace i = runThreads . interpret (handleTrace i) . raiseEnd

@@ -277,8 +277,7 @@ emulatorStateInitialDist mp = emulatorStatePool [tx] where
             }
 
 type MultiAgentEffs =
-    '[ Notify.EmulatorContractNotifyEffect
-     , State EmulatorState
+    '[ State EmulatorState
      , Error WAPI.WalletAPIError
      , Error AssertionError
      , Chain.ChainEffect
