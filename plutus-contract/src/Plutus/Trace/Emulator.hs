@@ -44,8 +44,10 @@ import           Plutus.Trace.Scheduler                          (Priority (..),
 import           Wallet.API                                      (WalletAPIError, defaultSlotRange, payToPublicKey_)
 import qualified Wallet.Emulator                                 as EM
 import           Wallet.Emulator.Chain                           (ChainControlEffect, ChainEffect)
-import           Wallet.Emulator.MultiAgent                      (MultiAgentEffect, walletAction)
+import           Wallet.Emulator.MultiAgent                      (MultiAgentEffect, walletAction, walletControlAction)
 import           Wallet.Emulator.Wallet                          (Wallet (..))
+import Wallet.Emulator.SigningProcess (SigningProcess)
+import qualified Wallet.Emulator.SigningProcess as SP
 
 import           Language.Plutus.Contract.Trace                  (InitialDistribution, defaultDist)
 import           Plutus.Trace.Effects.ContractInstanceId         (ContractInstanceIdEff, handleDeterministicIds, nextId)
@@ -142,6 +144,7 @@ emRunLocal wllt = \case
     ActivateContract con -> activate wllt con
     CallEndpointEm p h v -> callEndpoint p h v
     PayToWallet target vl -> payToWallet wllt target vl
+    SetSigningProcess sp -> setSigningProcess wllt sp
 
 payToWallet :: forall effs.
     ( Member MultiAgentEffect effs )
@@ -149,8 +152,16 @@ payToWallet :: forall effs.
     -> Wallet
     -> Value
     -> Eff (Yield (SystemCall effs EmulatorEvent) (Maybe EmulatorEvent) ': effs) ()
-payToWallet source target amount = void $ fork @effs @EmulatorEvent User High payment
+payToWallet source target amount = void $ fork @effs @EmulatorEvent System High payment
     where payment = walletAction source $ payToPublicKey_ defaultSlotRange amount (EM.walletPubKey target)
+
+setSigningProcess :: forall effs.
+    ( Member MultiAgentEffect effs )
+    => Wallet
+    -> SigningProcess
+    -> Eff (Yield (SystemCall effs EmulatorEvent) (Maybe EmulatorEvent) ': effs) ()
+setSigningProcess wllt sp = void $ fork @effs @EmulatorEvent System High st
+    where st = walletControlAction wllt $ SP.setSigningProcess sp
 
 activate :: forall s e effs.
     ( ContractConstraints s

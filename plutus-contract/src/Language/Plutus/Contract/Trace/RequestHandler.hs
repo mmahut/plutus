@@ -25,9 +25,6 @@ module Language.Plutus.Contract.Trace.RequestHandler(
     , handleNextTxAtQueries
     , handleOwnInstanceIdQueries
     , handleContractNotifications
-    -- * Misc. types
-    , MaxIterations(..)
-    , defaultMaxIterations
     ) where
 
 import           Control.Applicative                               (Alternative (empty))
@@ -206,13 +203,3 @@ handleContractNotifications ::
     => RequestHandler effs Notification (Maybe NotificationError)
 handleContractNotifications = RequestHandler $
     surroundDebug @Text "handleContractNotifications" . Wallet.Effects.sendNotification
-
--- | Maximum number of times request handlers are run before waiting for more
---   blockchain events
-newtype MaxIterations = MaxIterations Natural
-    deriving stock (Eq, Ord, Show, Generic)
-    deriving newtype (ToJSON, FromJSON)
-
--- | The default for 'MaxIterations' is twenty.
-defaultMaxIterations :: MaxIterations
-defaultMaxIterations = MaxIterations 20
