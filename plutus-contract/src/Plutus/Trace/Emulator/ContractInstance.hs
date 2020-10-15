@@ -40,7 +40,7 @@ import           Language.Plutus.Contract.Trace.RequestHandler (RequestHandler (
 import           Language.Plutus.Contract.Types                (ResumableResult (..))
 import qualified Language.Plutus.Contract.Types                as Contract.Types
 import           Plutus.Trace.Emulator.Types                   (ContractConstraints, ContractHandle (..),
-                                                                EmulatorAgentThreadEffs, EmulatorEvent (..),
+                                                                EmulatorAgentThreadEffs, EmulatorMessage (..),
                                                                 EmulatorThreads, instanceIdThreads)
 import           Plutus.Trace.Scheduler                        (Priority (..), SysCall (..), SystemCall, ThreadId,
                                                                 mkSysCall, sleep)
@@ -64,7 +64,7 @@ type ContractInstanceThreadEffs s e a effs =
 handleContractRuntime ::
     forall effs effs2.
     ( Member (State EmulatorThreads) effs2
-    , Member (Yield (SystemCall effs EmulatorEvent) (Maybe EmulatorEvent)) effs2
+    , Member (Yield (SystemCall effs EmulatorMessage) (Maybe EmulatorMessage)) effs2
     )
     => Eff (ContractRuntimeEffect ': effs2)
     ~> Eff effs2
@@ -75,7 +75,7 @@ handleContractRuntime = interpret $ \case
             Nothing -> pure $ Just $ InstanceDoesNotExist notificationContractID
             Just threadId -> do
                 let e = Message threadId (Notify n)
-                _ <- mkSysCall @effs @EmulatorEvent High e
+                _ <- mkSysCall @effs @EmulatorMessage High e
                 pure Nothing
 
 contractThread :: forall s e effs.
@@ -92,7 +92,7 @@ contractThread ContractHandle{chInstanceId, chContract} = do
         $ runReader chInstanceId
         $ evalState (emptyInstanceState chContract)
         $ do
-            msg <- mkSysCall @effs @EmulatorEvent Low Suspend
+            msg <- mkSysCall @effs @EmulatorMessage Low Suspend
             runInstance msg
 
 registerInstance :: forall effs.
@@ -140,7 +140,7 @@ runInstance :: forall s e a effs.
     , ContractConstraints s
     , Member (Error ContractInstanceError) effs
     )
-    => Maybe EmulatorEvent
+    => Maybe EmulatorMessage
     -> Eff (ContractInstanceThreadEffs s e a effs) ()
 runInstance event = do
     hks <- getHooks @s @e @a

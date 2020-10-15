@@ -18,7 +18,7 @@ import           Wallet.Emulator.Chain         (ChainControlEffect, ChainEffect,
 import           Wallet.Emulator.MultiAgent    (MultiAgentEffect, walletControlAction)
 
 import qualified Debug.Trace                   as Trace
-import           Plutus.Trace.Emulator.Types   (EmulatorEvent (..))
+import           Plutus.Trace.Emulator.Types   (EmulatorMessage (..))
 import           Plutus.Trace.Scheduler        (Priority (..), SysCall (..), SystemCall, ThreadType (..), fork,
                                                 mkSysCall, sleep)
 import           Wallet.Emulator.ChainIndex    (chainIndexNotify)
@@ -30,18 +30,18 @@ launchSystemThreads :: forall effs.
     , Member MultiAgentEffect effs
     , Member ChainEffect effs
     )
-    => Eff (Yield (SystemCall effs EmulatorEvent) (Maybe EmulatorEvent) ': effs) ()
+    => Eff (Yield (SystemCall effs EmulatorMessage) (Maybe EmulatorMessage) ': effs) ()
 launchSystemThreads = do
-    _ <- sleep @effs @EmulatorEvent Sleeping
+    _ <- sleep @effs @EmulatorMessage Sleeping
     -- 1. Block maker
-    _ <- fork @effs @EmulatorEvent System High (blockMaker @effs)
+    _ <- fork @effs @EmulatorMessage System High (blockMaker @effs)
     -- 2. Threads for updating the agents' states
-    traverse_ (fork @effs @EmulatorEvent System Low . agentThread @effs) (Wallet <$> [1])
+    traverse_ (fork @effs @EmulatorMessage System Low . agentThread @effs) (Wallet <$> [1])
 
 blockMaker :: forall effs effs2.
     ( Member ChainControlEffect effs2
     , Member ChainEffect effs2
-    , Member (Yield (SystemCall effs EmulatorEvent) (Maybe EmulatorEvent)) effs2
+    , Member (Yield (SystemCall effs EmulatorMessage) (Maybe EmulatorMessage)) effs2
     )
     => Eff effs2 ()
 blockMaker = go where
@@ -54,13 +54,13 @@ blockMaker = go where
 
 agentThread :: forall effs effs2.
     ( Member MultiAgentEffect effs2
-    , Member (Yield (SystemCall effs EmulatorEvent) (Maybe EmulatorEvent)) effs2
+    , Member (Yield (SystemCall effs EmulatorMessage) (Maybe EmulatorMessage)) effs2
     )
     => Wallet
     -> Eff effs2 ()
 agentThread wllt = go where
     go = do
-        e <- sleep @effs @EmulatorEvent Sleeping
+        e <- sleep @effs @EmulatorMessage Sleeping
         let noti = e >>= \case
                 BlockAdded block -> Just $ BlockValidated block
                 NewSlot slot -> Just $ SlotChanged slot

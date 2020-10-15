@@ -98,14 +98,14 @@ import           Ledger.Value                                    (Value)
 import           Wallet.Emulator                                 (EmulatorEvent)
 import qualified Wallet.Emulator                                 as EM
 import qualified Wallet.Emulator.Chain                           as EM
-import           Wallet.Emulator.MultiAgent                      (EmulatorTimeEvent (..), EmulatorState)
+import           Wallet.Emulator.MultiAgent                      (EmulatorState, EmulatorTimeEvent (..))
 import qualified Wallet.Emulator.MultiAgent                      as EM
 import qualified Wallet.Emulator.NodeClient                      as EM
 
 import           Language.Plutus.Contract.Schema                 (Event (..), Handlers (..), Input, Output)
 import           Language.Plutus.Contract.Trace                  as X
 import           Plutus.Trace                                    (Emulator, Trace)
-import Plutus.Trace.Emulator (EmulatorErr)
+import           Plutus.Trace.Emulator                           (EmulatorErr)
 
 newtype PredF f a = PredF { unPredF :: a -> f Bool }
     deriving Contravariant via (Op (f Bool))

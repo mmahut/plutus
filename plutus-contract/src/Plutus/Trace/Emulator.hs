@@ -27,36 +27,42 @@ module Plutus.Trace.Emulator(
     , emInterpreter
     ) where
 
+import           Control.Lens
 import           Control.Monad                                   (void)
 import           Control.Monad.Freer
 import           Control.Monad.Freer.Coroutine                   (Yield)
 import           Control.Monad.Freer.Error                       (Error, runError)
-import           Control.Monad.Freer.Extras                      (raiseEnd, raiseEnd4, wrapError)
+import           Control.Monad.Freer.Extras                      (raiseEnd, raiseEnd4, raiseEnd5, wrapError,
+                                                                  writeIntoState)
+import           Control.Monad.Freer.Log                         (LogMessage, LogMsg, handleLogWriter)
 import           Control.Monad.Freer.Reader                      (runReader)
 import           Control.Monad.Freer.State                       (State, evalState, runState)
+import           Control.Monad.Freer.Writer                      (Writer)
 import qualified Data.Aeson                                      as JSON
 import qualified Data.Map                                        as Map
 import           Data.Proxy                                      (Proxy)
 import           Language.Plutus.Contract                        (Contract, HasEndpoint)
 import qualified Language.Plutus.Contract.Effects.ExposeEndpoint as Endpoint
+import           Ledger.Slot                                     (Slot)
 import           Ledger.Value                                    (Value)
 import           Plutus.Trace.Scheduler                          (Priority (..), SysCall (..), SystemCall,
                                                                   ThreadType (..), fork, mkSysCall, runThreads, sleep)
 import           Wallet.API                                      (WalletAPIError, defaultSlotRange, payToPublicKey_)
 import qualified Wallet.Emulator                                 as EM
-import           Wallet.Emulator.Chain                           (ChainControlEffect, ChainEffect)
-import           Wallet.Emulator.MultiAgent                      (MultiAgentEffect, walletAction, walletControlAction)
-import           Wallet.Emulator.Wallet                          (Wallet (..))
-import Wallet.Emulator.SigningProcess (SigningProcess)
-import qualified Wallet.Emulator.SigningProcess as SP
+import           Wallet.Emulator.Chain                           (ChainControlEffect, ChainEffect, getCurrentSlot)
+import           Wallet.Emulator.MultiAgent                      (EmulatorState, MultiAgentEffect, emulatorLog,
+                                                                  emulatorTimeEvent, schedulerEvent, walletAction,
+                                                                  walletControlAction)
+import           Wallet.Emulator.Wallet                          (SigningProcess, Wallet (..))
+import qualified Wallet.Emulator.Wallet                          as W
 
 import           Language.Plutus.Contract.Trace                  (InitialDistribution, defaultDist)
 import           Plutus.Trace.Effects.ContractInstanceId         (ContractInstanceIdEff, handleDeterministicIds, nextId)
 import           Plutus.Trace.Emulator.ContractInstance          (ContractInstanceError, contractThread, getThread)
 import           Plutus.Trace.Emulator.System                    (launchSystemThreads)
 import           Plutus.Trace.Emulator.Types                     (ContractConstraints, ContractHandle (..), Emulator,
-                                                                  EmulatorEvent (..), EmulatorGlobal (..),
-                                                                  EmulatorLocal (..), EmulatorThreads)
+                                                                  EmulatorGlobal (..), EmulatorLocal (..),
+                                                                  EmulatorMessage (..), EmulatorThreads)
 import qualified Plutus.Trace.Emulator.Types                     as Types
 import           Plutus.Trace.Types
 
@@ -72,7 +78,8 @@ data EmulatorErr =
 
 runTraceBackend ::
     EmulatorConfig
-    -> Eff '[ MultiAgentEffect
+    -> Eff '[ LogMsg SchedulerLog
+            , MultiAgentEffect
             , ChainEffect
             , ChainControlEffect
             , Error ContractInstanceError
@@ -86,7 +93,25 @@ runTraceBackend conf =
     . wrapError AssertionErr
     . wrapError InstanceErr
     . EM.processEmulated
-    . raiseEnd4
+    . handleSchedulerLog
+    . raiseEnd5
+
+-- | Write the 'SchedulerLog' messages into the emulator's
+--   log
+handleSchedulerLog ::
+    ( Member (State EmulatorState) effs
+    , Member ChainEffect effs
+    )
+    => Eff (LogMsg SchedulerLog ': effs)
+    ~> Eff effs
+handleSchedulerLog action = do
+    emulatorTime :: Slot <- getCurrentSlot
+    let timed :: forall e. Prism' (EM.EmulatorTimeEvent e) e
+        timed = emulatorTimeEvent emulatorTime
+        p :: AReview [LogMessage EM.EmulatorEvent] (LogMessage SchedulerLog)
+        p = unto (\x -> [x]) . below (timed . schedulerEvent)
+    interpret (writeIntoState emulatorLog)
+        $ reinterpret @_ @(Writer [LogMessage EM.EmulatorEvent]) (handleLogWriter p) action
 
 data EmulatorConfig =
     EmulatorConfig
@@ -109,6 +134,7 @@ interpretEmulatorTrace :: forall effs.
     , Member (Error ContractInstanceError) effs
     , Member ChainEffect effs
     , Member ChainControlEffect effs
+    , Member (LogMsg SchedulerLog) effs
     )
     => Eff '[Trace Emulator] ()
     -> Eff effs ()
@@ -126,7 +152,7 @@ emInterpreter :: forall effs.
     , Member MultiAgentEffect effs
     , Member (Error ContractInstanceError) effs
     )
-    => TraceInterpreter Emulator effs EmulatorEvent
+    => TraceInterpreter Emulator effs EmulatorMessage
 emInterpreter = TraceInterpreter
     { _runLocal = emRunLocal
     , _runGlobal = emRunGlobal
@@ -140,7 +166,7 @@ emRunLocal :: forall b effs.
     )
     => Wallet
     -> EmulatorLocal b
-    -> Eff (Yield (SystemCall effs EmulatorEvent) (Maybe EmulatorEvent) ': effs) b
+    -> Eff (Yield (SystemCall effs EmulatorMessage) (Maybe EmulatorMessage) ': effs) b
 emRunLocal wllt = \case
     ActivateContract con -> activate wllt con
     CallEndpointEm p h v -> callEndpoint p h v
@@ -152,17 +178,17 @@ payToWallet :: forall effs.
     => Wallet
     -> Wallet
     -> Value
-    -> Eff (Yield (SystemCall effs EmulatorEvent) (Maybe EmulatorEvent) ': effs) ()
-payToWallet source target amount = void $ fork @effs @EmulatorEvent System High payment
+    -> Eff (Yield (SystemCall effs EmulatorMessage) (Maybe EmulatorMessage) ': effs) ()
+payToWallet source target amount = void $ fork @effs @EmulatorMessage System High payment
     where payment = walletAction source $ payToPublicKey_ defaultSlotRange amount (EM.walletPubKey target)
 
 setSigningProcess :: forall effs.
     ( Member MultiAgentEffect effs )
     => Wallet
     -> SigningProcess
-    -> Eff (Yield (SystemCall effs EmulatorEvent) (Maybe EmulatorEvent) ': effs) ()
-setSigningProcess wllt sp = void $ fork @effs @EmulatorEvent System High st
-    where st = walletControlAction wllt $ SP.setSigningProcess sp
+    -> Eff (Yield (SystemCall effs EmulatorMessage) (Maybe EmulatorMessage) ': effs) ()
+setSigningProcess wllt sp = void $ fork @effs @EmulatorMessage System High st
+    where st = walletControlAction wllt $ W.setSigningProcess sp
 
 activate :: forall s e effs.
     ( ContractConstraints s
@@ -173,11 +199,11 @@ activate :: forall s e effs.
     )
     => Wallet
     -> Contract s e ()
-    -> Eff (Yield (SystemCall effs EmulatorEvent) (Maybe EmulatorEvent) ': effs) (ContractHandle s e)
+    -> Eff (Yield (SystemCall effs EmulatorMessage) (Maybe EmulatorMessage) ': effs) (ContractHandle s e)
 activate wllt con = do
     i <- nextId
     let handle = ContractHandle{chContract=con, chInstanceId = i}
-    _ <- fork @effs @EmulatorEvent System High (runReader wllt $ contractThread handle)
+    _ <- fork @effs @EmulatorMessage System High (runReader wllt $ contractThread handle)
     pure handle
 
 callEndpoint :: forall s l e ep effs.
@@ -189,16 +215,16 @@ callEndpoint :: forall s l e ep effs.
     => Proxy l
     -> ContractHandle s e
     -> ep
-    -> Eff (Yield (SystemCall effs EmulatorEvent) (Maybe EmulatorEvent) ': effs) ()
+    -> Eff (Yield (SystemCall effs EmulatorMessage) (Maybe EmulatorMessage) ': effs) ()
 callEndpoint _ ContractHandle{chInstanceId} ep = do
     threadId <- getThread chInstanceId
     let epJson = JSON.toJSON $ Endpoint.event @l @ep @s ep
-        thr = void $ mkSysCall @effs @EmulatorEvent High (Message threadId $ EndpointCall epJson)
-    void $ fork @effs @EmulatorEvent System High thr
+        thr = void $ mkSysCall @effs @EmulatorMessage High (Message threadId $ EndpointCall epJson)
+    void $ fork @effs @EmulatorMessage System High thr
 
 emRunGlobal :: forall b effs.
     EmulatorGlobal b
-    -> Eff (Yield (SystemCall effs EmulatorEvent) (Maybe EmulatorEvent) ': effs) b
+    -> Eff (Yield (SystemCall effs EmulatorMessage) (Maybe EmulatorMessage) ': effs) b
 emRunGlobal = \case
     WaitUntilSlot s -> go where
         go = sleep @effs Sleeping >>= \case { Just (NewSlot sl) | sl >= s -> pure sl; _ -> go }

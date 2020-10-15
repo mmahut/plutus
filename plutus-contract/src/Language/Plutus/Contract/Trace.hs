@@ -85,8 +85,8 @@ import qualified Language.Plutus.Contract.Effects.UtxoAt           as UtxoAt
 import qualified Language.Plutus.Contract.Effects.WatchAddress     as WatchAddress
 import qualified Language.Plutus.Contract.Effects.WriteTx          as WriteTx
 import           Language.Plutus.Contract.Resumable                (Request (..), Requests (..), Response (..))
-import           Language.Plutus.Contract.Trace.RequestHandler     (RequestHandler (..),
-                                                                    RequestHandlerLogMsg, maybeToHandler)
+import           Language.Plutus.Contract.Trace.RequestHandler     (RequestHandler (..), RequestHandlerLogMsg,
+                                                                    maybeToHandler)
 import qualified Language.Plutus.Contract.Trace.RequestHandler     as RequestHandler
 import           Language.Plutus.Contract.Types                    (ResumableResult (..))
 

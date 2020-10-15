@@ -12,7 +12,7 @@
 {-# LANGUAGE TypeOperators       #-}
 
 module Plutus.Trace.Emulator.Types(
-    EmulatorEvent(..)
+    EmulatorMessage(..)
     , EmulatorThreads(..)
     , instanceIdThreads
     , EmulatorAgentThreadEffs
@@ -43,8 +43,7 @@ import           Ledger.Tx                       (Tx)
 import           Ledger.Value                    (Value)
 import           Plutus.Trace.Scheduler          (SystemCall, ThreadId)
 import           Plutus.Trace.Types              (Trace (..), TraceBackend (..))
-import           Wallet.Emulator.SigningProcess  (SigningProcess)
-import           Wallet.Emulator.Wallet          (Wallet (..))
+import           Wallet.Emulator.Wallet          (SigningProcess, Wallet (..))
 import           Wallet.Types                    (ContractInstanceId, Notification)
 
 type ContractConstraints s =
@@ -56,7 +55,7 @@ type ContractConstraints s =
     , HasBlockchainActions s
     )
 
-data EmulatorEvent =
+data EmulatorMessage =
     BlockAdded [Tx]
     | NewSlot Slot
     | EndpointCall JSON.Value
@@ -74,7 +73,7 @@ makeLenses ''EmulatorThreads
 type EmulatorAgentThreadEffs effs =
     Reader Wallet
     ': Reader ThreadId
-    ': Yield (SystemCall effs EmulatorEvent) (Maybe EmulatorEvent)
+    ': Yield (SystemCall effs EmulatorMessage) (Maybe EmulatorMessage)
     ': effs
 
 data Emulator

@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE DerivingStrategies  #-}
+{-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -31,44 +32,48 @@ module Plutus.Trace.Scheduler(
     -- * Etc.
     , mkThread
     , mkSysCall
+    , SchedulerLog(..)
+    , ThreadEvent(..)
     ) where
 
 
-import           Control.Lens                  hiding (Empty)
+import           Control.Lens                     hiding (Empty)
 import           Control.Monad.Freer
 import           Control.Monad.Freer.Coroutine
+import           Control.Monad.Freer.Log          (LogMsg, logDebug, logInfo)
 import           Control.Monad.Freer.Reader
-import           Data.Hashable                 (Hashable)
-import           Data.HashMap.Strict           (HashMap)
-import qualified Data.HashMap.Strict           as HashMap
-import           Data.HashSet                  (HashSet)
-import qualified Data.HashSet                  as HashSet
-import           Data.Map                      (Map)
-import           Data.Map                      as Map
-import           Data.Sequence                 (Seq (..))
-import qualified Data.Sequence                 as Seq
-import qualified Debug.Trace                   as Trace
-import           GHC.Generics                  (Generic)
+import           Data.Aeson                       (FromJSON, ToJSON)
+import           Data.Hashable                    (Hashable)
+import           Data.HashMap.Strict              (HashMap)
+import qualified Data.HashMap.Strict              as HashMap
+import           Data.HashSet                     (HashSet)
+import qualified Data.HashSet                     as HashSet
+import           Data.Map                         (Map)
+import           Data.Map                         as Map
+import           Data.Sequence                    (Seq (..))
+import qualified Data.Sequence                    as Seq
+import           Data.Text.Prettyprint.Doc
+import           Data.Text.Prettyprint.Doc.Extras (PrettyShow (..), Tagged (..))
+import qualified Debug.Trace                      as Trace
+import           GHC.Generics                     (Generic)
 
 newtype ThreadId = ThreadId { unThreadId :: Int }
     deriving stock (Eq, Ord, Show, Generic)
-    deriving anyclass (Hashable)
+    deriving anyclass (Hashable, ToJSON, FromJSON)
+    deriving Pretty via (Tagged "ThreadId:" Int)
 
 initialThreadId :: ThreadId
 initialThreadId = ThreadId 0
 
 data Priority = Low | High | Sleeping
-    deriving stock (Eq, Ord, Show, Generic)
+    deriving stock (Eq, Show, Generic)
+    deriving anyclass (ToJSON, FromJSON)
+    deriving Pretty via (PrettyShow Priority)
 
 data ThreadType = System | User
     deriving stock (Eq, Ord, Show, Generic)
+    deriving anyclass (ToJSON, FromJSON)
 
--- | The "system calls" we can make when a 'Simulator' action.
-data SysCall effs systemEvent
-    = Fork ThreadType (ThreadId -> SuspendedThread effs systemEvent)
-    | Suspend
-    | Broadcast systemEvent
-    | Message ThreadId systemEvent
 
 -- | A suspended thread with a 'Priority'.
 data WithPriority t
@@ -87,6 +92,15 @@ data EmThread effs systemEvent =
         , _threadId     :: ThreadId
         }
 
+-- | The "system calls" we can make when a 'Simulator' action.
+data SysCall effs systemEvent
+    = Fork ThreadType (ThreadId -> SuspendedThread effs systemEvent)
+    | Suspend
+    | Broadcast systemEvent
+    | Message ThreadId systemEvent
+
+makePrisms ''SysCall
+
 -- | Scheduler state consisting of three queues of suspended threads, one for
 --   each 'Priority' level.
 data SchedulerState effs systemEvent
@@ -100,25 +114,6 @@ data SchedulerState effs systemEvent
         }
 
 makeLenses ''SchedulerState
-
-desc :: SchedulerState effs systemEvent -> String
-desc SchedulerState{_highPrio, _lowPrio, _sleeping} =
-    show $ fmap _threadId $ (_highPrio <> _lowPrio <> _sleeping)
-    -- "[High priority: "
-    --     <> show (_threadId <$> _highPrio)
-    --     <> "; low priority: "
-    --     <> show (_threadId <$> _lowPrio)
-    --     <> "; sleeping: "
-    --     <> show (_threadId <$> _sleeping)
-    --     <> "; mailboxes: "
-    --     <> show (fmap Seq.length _mailboxes)
-    --     <> "; active threads: "
-    --     <> show _activeThreads
-    --     <> "]"
-
-numThreads :: SchedulerState effs systemEvent -> Int
-numThreads SchedulerState{_highPrio, _lowPrio, _sleeping} =
-    Seq.length $ _highPrio <> _lowPrio <> _sleeping
 
 removeActiveThread :: ThreadId -> SchedulerState effs systemEvent -> SchedulerState effs systemEvent
 removeActiveThread tid = over (activeThreads . mapped) (HashSet.delete tid)
@@ -166,7 +161,9 @@ sleep prio = mkSysCall @effs @systemEvent @effs2 prio Suspend
 
 runThreads ::
     forall effs systemEvent.
-    Eq systemEvent
+    ( Eq systemEvent
+    , Member (LogMsg SchedulerLog) effs
+    )
     => Eff (Yield (SystemCall effs systemEvent) (Maybe systemEvent) ': effs) ()
     -> Eff effs ()
 runThreads e = do
@@ -183,14 +180,23 @@ runThreads e = do
                     & enqueue (suspendThread High initialThread)
 
 -- | Run the threads that are scheduled in a 'SchedulerState' to completion.
-loop :: Eq systemEvent => SchedulerState effs systemEvent -> Eff effs ()
+loop :: forall effs systemEvent.
+    ( Eq systemEvent
+    , Member (LogMsg SchedulerLog) effs
+    )
+    => SchedulerState effs systemEvent
+    -> Eff effs ()
 loop s = do
     case dequeue s of
-        AThread EmThread{_continuation, _threadId} event schedulerState | hasActiveUserThreads schedulerState -> do
+        AThread EmThread{_continuation, _threadId} event schedulerState prio | hasActiveUserThreads schedulerState -> do
+            logDebug SchedulerLog{slEvent=Resumed, slThread=_threadId, slPrio=prio}
             result <- _continuation event
             case result of
-                Done () -> loop $ schedulerState & removeActiveThread _threadId
+                Done () -> do
+                    logInfo SchedulerLog{slEvent=Stopped, slThread=_threadId, slPrio=prio}
+                    loop $ schedulerState & removeActiveThread _threadId
                 Continue WithPriority{_priority, _thread=sysCall} k -> do
+                    logDebug SchedulerLog{slEvent=Suspended, slThread=_threadId, slPrio=_priority}
                     let thisThread = suspendThread _priority EmThread{_threadId=_threadId, _continuation=k}
                         newState = schedulerState & enqueue thisThread & handleSysCall sysCall
                     loop newState
@@ -227,24 +233,24 @@ enqueue WithPriority {_priority, _thread} s =
 -- | Result of calling 'dequeue'. Either a thread that is ready to receive a message,
 --   or no more threads.
 data SchedulerDQResult effs systemEvent
-    = AThread (EmThread effs systemEvent) (Maybe systemEvent) (SchedulerState effs systemEvent)
+    = AThread (EmThread effs systemEvent) (Maybe systemEvent) (SchedulerState effs systemEvent) Priority
     | NoMoreThreads
 
 dequeue :: SchedulerState effs systemEvent -> SchedulerDQResult effs systemEvent
 dequeue s = case dequeueThread s of
     Nothing -> NoMoreThreads
-    Just (s', thread) -> case dequeueMessage s' (_threadId thread) of
-        Nothing       -> AThread thread Nothing s'
-        Just (s'', m) -> AThread thread (Just m) s''
+    Just (s', thread, prio) -> case dequeueMessage s' (_threadId thread) of
+        Nothing       -> AThread thread Nothing s' prio
+        Just (s'', m) -> AThread thread (Just m) s'' prio
 
-dequeueThread :: SchedulerState effs systemEvent -> Maybe (SchedulerState effs systemEvent, EmThread effs systemEvent)
+dequeueThread :: SchedulerState effs systemEvent -> Maybe (SchedulerState effs systemEvent, EmThread effs systemEvent, Priority)
 dequeueThread s =
     case s ^. highPrio of
-        x :<| xs -> Just (s & highPrio .~ xs, x)
+        x :<| xs -> Just (s & highPrio .~ xs, x, High)
         Empty -> case s ^. lowPrio of
-            x :<| xs -> Just (s & lowPrio .~ xs, x)
+            x :<| xs -> Just (s & lowPrio .~ xs, x, Low)
             Empty -> case s ^. sleeping of
-                x :<| xs -> Just (s & sleeping .~ xs, x)
+                x :<| xs -> Just (s & sleeping .~ xs, x, Sleeping)
                 Empty    -> Nothing
 
 dequeueMessage :: SchedulerState effs systemEvent -> ThreadId -> Maybe (SchedulerState effs systemEvent, systemEvent)
@@ -252,3 +258,25 @@ dequeueMessage s i = do
     mailbox <- s ^. mailboxes . at i
     (x, xs) <- case mailbox of { Empty -> Nothing; x :<| xs -> Just (x, xs) }
     pure (s & mailboxes . at i .~ Just xs, x)
+
+---
+--- Logging etc.
+---
+
+data ThreadEvent = Stopped | Resumed | Suspended
+    deriving stock (Eq, Show, Generic)
+    deriving anyclass (ToJSON, FromJSON)
+    deriving Pretty via (PrettyShow ThreadEvent)
+
+data SchedulerLog =
+    SchedulerLog
+        { slEvent  :: ThreadEvent
+        , slThread :: ThreadId
+        , slPrio   :: Priority
+        }
+    deriving stock (Eq, Show, Generic)
+    deriving anyclass (ToJSON, FromJSON)
+
+instance Pretty SchedulerLog where
+    pretty SchedulerLog{slEvent, slThread, slPrio} =
+        pretty slThread <> colon <+> pretty slEvent <+> parens (pretty slPrio)

@@ -49,7 +49,6 @@ module Wallet.Emulator.Types(
     emulatorStateInitialDist,
     txPool,
     walletStates,
-    walletClientStates,
     index,
     chainState,
     currentSlot,

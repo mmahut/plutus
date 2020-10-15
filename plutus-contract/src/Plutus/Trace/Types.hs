@@ -22,12 +22,17 @@ module Plutus.Trace.Types
     TraceInterpreter (..),
     handleTrace,
     runTrace,
+
+    -- * Logging
+    SchedulerLog(..),
+    ThreadEvent(..)
   )
 where
 
 import           Control.Monad.Freer
 import           Control.Monad.Freer.Coroutine
 import           Control.Monad.Freer.Extras
+import           Control.Monad.Freer.Log       (LogMsg)
 import           Plutus.Trace.Scheduler
 
 class TraceBackend a where
@@ -56,7 +61,9 @@ handleTrace TraceInterpreter {_runGlobal, _runLocal} = \case
 
 runTrace ::
     forall a effs systemEvent.
-    Eq systemEvent
+    ( Eq systemEvent
+    , Member (LogMsg SchedulerLog) effs
+    )
     => TraceInterpreter a effs systemEvent
     -> Eff '[Trace a] ()
     -> Eff effs ()

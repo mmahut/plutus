@@ -22,30 +22,30 @@ import           Control.Monad
 import           Control.Monad.Freer
 import           Control.Monad.Freer.Error
 import           Control.Monad.Freer.Extras
-import           Control.Monad.Freer.Log        (LogLevel (..), LogMessage, LogMsg, LogObserve, handleLogWriter,
-                                                 handleObserveLog, logMessage)
-import qualified Control.Monad.Freer.Log        as Log
+import           Control.Monad.Freer.Log     (LogLevel (..), LogMessage, LogMsg, LogObserve, handleLogWriter,
+                                              handleObserveLog, logMessage)
+import qualified Control.Monad.Freer.Log     as Log
 import           Control.Monad.Freer.State
-import           Data.Aeson                     (FromJSON, ToJSON)
-import           Data.Map                       (Map)
-import qualified Data.Map                       as Map
-import qualified Data.Text                      as T
-import           Data.Text.Extras               (tshow)
+import           Data.Aeson                  (FromJSON, ToJSON)
+import           Data.Map                    (Map)
+import qualified Data.Map                    as Map
+import qualified Data.Text                   as T
+import           Data.Text.Extras            (tshow)
 import           Data.Text.Prettyprint.Doc
-import           GHC.Generics                   (Generic)
-import           Ledger                         hiding (to, value)
-import qualified Ledger.AddressMap              as AM
-import qualified Ledger.Index                   as Index
-import qualified Wallet.API                     as WAPI
-import qualified Wallet.Effects                 as Wallet
-import qualified Wallet.Emulator.Chain          as Chain
-import qualified Wallet.Emulator.ChainIndex     as ChainIndex
-import           Wallet.Emulator.LogMessages    (RequestHandlerLogMsg, TxBalanceMsg)
-import qualified Wallet.Emulator.NodeClient     as NC
-import qualified Wallet.Emulator.Notify         as Notify
-import qualified Wallet.Emulator.SigningProcess as SP
-import qualified Wallet.Emulator.Wallet         as Wallet
-import           Wallet.Types                   (AssertionError (..))
+import           GHC.Generics                (Generic)
+import           Ledger                      hiding (to, value)
+import qualified Ledger.AddressMap           as AM
+import qualified Ledger.Index                as Index
+import qualified Plutus.Trace.Scheduler      as Scheduler
+import qualified Wallet.API                  as WAPI
+import qualified Wallet.Effects              as Wallet
+import qualified Wallet.Emulator.Chain       as Chain
+import qualified Wallet.Emulator.ChainIndex  as ChainIndex
+import           Wallet.Emulator.LogMessages (RequestHandlerLogMsg, TxBalanceMsg)
+import qualified Wallet.Emulator.NodeClient  as NC
+import qualified Wallet.Emulator.Notify      as Notify
+import qualified Wallet.Emulator.Wallet      as Wallet
+import           Wallet.Types                (AssertionError (..))
 
 -- | Assertions which will be checked during execution of the emulator.
 data Assertion
@@ -78,6 +78,7 @@ data EmulatorEvent' =
     | WalletEvent Wallet.Wallet Wallet.WalletEvent
     | ChainIndexEvent Wallet.Wallet ChainIndex.ChainIndexEvent
     | NotificationEvent Notify.EmulatorNotifyLogMsg
+    | SchedulerEvent Scheduler.SchedulerLog
     deriving stock (Eq, Show, Generic)
     deriving anyclass (ToJSON, FromJSON)
 
@@ -88,6 +89,7 @@ instance Pretty EmulatorEvent' where
         WalletEvent w e -> pretty w <> colon <+> pretty e
         ChainIndexEvent w e -> pretty w <> colon <+> pretty e
         NotificationEvent e -> pretty e
+        SchedulerEvent e -> pretty e
 
 type EmulatorEvent = EmulatorTimeEvent EmulatorEvent'
 
@@ -106,6 +108,9 @@ chainIndexEvent w = prism' (ChainIndexEvent w) (\case { ChainIndexEvent w' c | w
 notificationEvent :: Prism' EmulatorEvent' Notify.EmulatorNotifyLogMsg
 notificationEvent = prism' NotificationEvent (\case { NotificationEvent e -> Just e; _ -> Nothing })
 
+schedulerEvent :: Prism' EmulatorEvent' Scheduler.SchedulerLog
+schedulerEvent = prism' SchedulerEvent (\case { SchedulerEvent e -> Just e; _ -> Nothing })
+
 type EmulatedWalletEffects =
         '[ Wallet.WalletEffect
          , Error WAPI.WalletAPIError
@@ -121,7 +126,7 @@ type EmulatedWalletEffects =
 type EmulatedWalletControlEffects =
         '[ NC.NodeClientControlEffect
          , ChainIndex.ChainIndexControlEffect
-         , SP.SigningProcessControlEffect
+         , Wallet.SigningProcessControlEffect
          , LogObserve (LogMessage T.Text)
          , LogMsg T.Text
         ]
@@ -197,27 +202,15 @@ assertIsValidated = assertion . IsValidated
 
 -- | The state of the emulator itself.
 data EmulatorState = EmulatorState {
-    _chainState                 :: Chain.ChainState,
-    _walletStates               :: Map Wallet.Wallet Wallet.WalletState, -- ^ The state of each wallet.
-    _walletClientStates         :: Map Wallet.Wallet NC.NodeClientState, -- ^ The state of each wallet's node client.
-    _walletChainIndexStates     :: Map Wallet.Wallet ChainIndex.ChainIndexState, -- ^ The state of each wallet's chain index
-    _walletSigningProcessStates :: Map Wallet.Wallet SP.SigningProcess, -- ^ The wallet's signing process
-    _emulatorLog                :: [LogMessage EmulatorEvent] -- ^ The emulator log messages, with the newest last.
+    _chainState   :: Chain.ChainState, -- ^ Mockchain
+    _walletStates :: Map Wallet.Wallet Wallet.WalletState, -- ^ The state of each agent.
+    _emulatorLog  :: [LogMessage EmulatorEvent] -- ^ The emulator log messages, with the newest last.
     } deriving (Show)
 
 makeLenses ''EmulatorState
 
 walletState :: Wallet.Wallet -> Lens' EmulatorState Wallet.WalletState
-walletState wallet = walletStates . at wallet . non (Wallet.emptyWalletState wallet)
-
-walletClientState :: Wallet.Wallet -> Lens' EmulatorState NC.NodeClientState
-walletClientState wallet = walletClientStates . at wallet . non NC.emptyNodeClientState
-
-walletChainIndexState :: Wallet.Wallet -> Lens' EmulatorState ChainIndex.ChainIndexState
-walletChainIndexState wallet = walletChainIndexStates . at wallet . non mempty
-
-signingProcessState :: Wallet.Wallet -> Lens' EmulatorState SP.SigningProcess
-signingProcessState wallet = walletSigningProcessStates . at wallet . anon (SP.defaultSigningProcess wallet) (const False)
+walletState wallet = walletStates . at wallet . anon (Wallet.emptyWalletState wallet) (const False)
 
 -- | Get the blockchain as a list of blocks, starting with the oldest (genesis)
 --   block.
@@ -231,7 +224,7 @@ chainUtxo = chainState . Chain.chainNewestFirst . to AM.fromChain
 fundsDistribution :: EmulatorState -> Map Wallet.Wallet Value
 fundsDistribution st =
     let fullState = view chainUtxo st
-        wallets = Map.keys (_walletClientStates st)
+        wallets = st ^.. walletStates . to Map.keys . folded
         walletFunds = flip fmap wallets $ \w ->
             (w, foldMap (txOutValue . txOutTxOut) $ view (AM.fundsAt (Wallet.walletAddress w)) fullState)
     in Map.fromList walletFunds
@@ -244,9 +237,6 @@ emptyEmulatorState :: EmulatorState
 emptyEmulatorState = EmulatorState {
     _chainState = Chain.emptyChainState,
     _walletStates = mempty,
-    _walletClientStates = mempty,
-    _walletChainIndexStates = mempty,
-    _walletSigningProcessStates = mempty,
     _emulatorLog = mempty
     }
 
@@ -314,7 +304,7 @@ handleMultiAgent = interpret $ \case
             & subsume
             & NC.handleNodeClient
             & ChainIndex.handleChainIndex
-            & SP.handleSigningProcess
+            & Wallet.handleSigningProcess
             & handleObserveLog
             & interpret (handleLogWriter p5)
             & interpret (handleLogWriter p6)
@@ -322,11 +312,11 @@ handleMultiAgent = interpret $ \case
             & interpret (handleLogWriter p7)
             & interpret (handleZoomedState (walletState wallet))
             & interpret (handleZoomedWriter p1)
-            & interpret (handleZoomedState (walletClientState wallet))
+            & interpret (handleZoomedState (walletState wallet . Wallet.nodeClient))
             & interpret (handleZoomedWriter p2)
-            & interpret (handleZoomedState (walletChainIndexState wallet))
+            & interpret (handleZoomedState (walletState wallet . Wallet.chainIndex))
             & interpret (handleLogWriter p3)
-            & interpret (handleZoomedState (signingProcessState wallet))
+            & interpret (handleZoomedState (walletState wallet . Wallet.signingProcess))
             & interpret (writeIntoState emulatorLog)
 
     WalletControlAction wallet act -> do
@@ -346,16 +336,16 @@ handleMultiAgent = interpret $ \case
             & raiseEnd5
             & NC.handleNodeControl
             & ChainIndex.handleChainIndexControl
-            & SP.handleSigningProcessControl
+            & Wallet.handleSigningProcessControl
             & handleObserveLog
             & interpret (handleLogWriter p4)
             & interpret (handleZoomedState (walletState wallet))
             & interpret (handleZoomedWriter p1)
-            & interpret (handleZoomedState (walletClientState wallet))
+            & interpret (handleZoomedState (walletState wallet . Wallet.nodeClient))
             & interpret (handleZoomedWriter p2)
-            & interpret (handleZoomedState (walletChainIndexState wallet))
+            & interpret (handleZoomedState (walletState wallet . Wallet.chainIndex))
             & interpret (handleLogWriter p3)
-            & interpret (handleZoomedState (signingProcessState wallet))
+            & interpret (handleZoomedState (walletState wallet . Wallet.signingProcess))
             & interpret (writeIntoState emulatorLog)
     Assertion a -> assert a
 
