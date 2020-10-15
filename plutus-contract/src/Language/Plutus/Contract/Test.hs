@@ -98,13 +98,14 @@ import           Ledger.Value                                    (Value)
 import           Wallet.Emulator                                 (EmulatorEvent)
 import qualified Wallet.Emulator                                 as EM
 import qualified Wallet.Emulator.Chain                           as EM
-import           Wallet.Emulator.MultiAgent                      (EmulatorTimeEvent (..))
+import           Wallet.Emulator.MultiAgent                      (EmulatorTimeEvent (..), EmulatorState)
 import qualified Wallet.Emulator.MultiAgent                      as EM
 import qualified Wallet.Emulator.NodeClient                      as EM
 
 import           Language.Plutus.Contract.Schema                 (Event (..), Handlers (..), Input, Output)
 import           Language.Plutus.Contract.Trace                  as X
 import           Plutus.Trace                                    (Emulator, Trace)
+import Plutus.Trace.Emulator (EmulatorErr)
 
 newtype PredF f a = PredF { unPredF :: a -> f Bool }
     deriving Contravariant via (Op (f Bool))
@@ -120,27 +121,7 @@ instance Applicative f => BoundedJoinSemiLattice (PredF f a) where
 instance Applicative f => BoundedMeetSemiLattice (PredF f a) where
     top = PredF $ const (pure top)
 
-type TracePredicate s e a = PredF (Writer (Doc Void)) (InitialDistribution, ContractTraceResult s e a)
-
-hooks
-    :: forall s e a.
-    Wallet
-    -> ContractTraceResult s e a
-    -> [Handlers s]
-hooks w rs =
-    let (evts, con) = contractEventsWallet rs w
-        store       = contractCheckpointStore w rs
-    in fmap State.rqRequest . State.unRequests . Types.wcsRequests $ Types.runResumable evts store (unContract con)
-
-record
-    :: forall s e a.
-    Wallet
-    -> ContractTraceResult s e a
-    -> Responses (Event s)
-record w rs =
-    let (evts, con) = contractEventsWallet rs w
-        store       = contractCheckpointStore w rs
-    in Types.wcsResponses (Types.runResumable evts store (unContract con))
+type TracePredicate = PredF (Writer (Doc Void)) (InitialDistribution, Maybe EmulatorErr, EmulatorState)
 
 not :: TracePredicate s e a -> TracePredicate s e a
 not = PredF . fmap (fmap Prelude.not) . unPredF
@@ -170,13 +151,9 @@ checkPredicate nm predicate action = undefined
         --         HUnit.assertBool nm result
 
 renderTraceContext
-    :: forall s e a ann.
-        ( Forall (Input s) Pretty
-        , Forall (Output s) Pretty
-        , Show e
-        )
-    => Doc ann
-    -> ContractTraceState s e a
+    :: forall ann.
+    Doc ann
+    -> ContractTraceState
     -> Text.Text
 renderTraceContext testOutputs st =
     let nonEmptyLogs =

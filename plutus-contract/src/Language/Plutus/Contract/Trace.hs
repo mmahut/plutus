@@ -20,26 +20,14 @@
 --   on the mockchain. This module contains the functions needed to build
 --   traces.
 module Language.Plutus.Contract.Trace
-    ( ContractTraceState
-    , TraceError(..)
+    ( TraceError(..)
     , EndpointError(..)
     , AsTraceError(..)
     , toNotifyError
-    , WalletState(..)
-    , ctsWalletStates
-    , ctsContract
-    , eventsByWallet
-    , handlersByWallet
-    , checkpointStoreByWallet
-    , ContractTraceResult(..)
-    , ctrEmulatorState
-    , ctrTraceState
     -- * Running 'ContractTrace' actions
     -- * Constructing 'ContractTrace' actions
     , handleUtxoQueries
     , handleNextTxAtQueries
-    , addNamedEvent
-    , addResponse
     -- * Handle blockchain events repeatedly
     , handleBlockchainQueries
     , handleSlotNotifications
@@ -143,124 +131,6 @@ data TraceError e =
     deriving (Eq, Show)
 
 type InitialDistribution = Map Wallet Value
-
-data WalletState s e a =
-    WalletState
-        { walletContractState   :: ResumableResult e (Event s) (Handlers s) a
-        , walletEvents          :: Seq (Response (Event s))
-        , walletHandlersHistory :: Seq [State.Request (Handlers s)]
-        }
-
-walletHandlers :: WalletState s (TraceError e) a -> [State.Request (Handlers s)]
-walletHandlers = State.unRequests . wcsRequests . walletContractState
-
-emptyWalletState :: Contract s e a -> WalletState s e a
-emptyWalletState (Contract c) =
-    WalletState
-        { walletContractState = Contract.Types.runResumable [] mempty c
-        , walletEvents = mempty
-        , walletHandlersHistory = mempty
-        }
-
-addEventWalletState ::
-    Contract s e a
-    -> Response (Event s)
-    -> WalletState s e a
-    -> WalletState s e a
-addEventWalletState (Contract c) event s@WalletState{walletContractState, walletEvents, walletHandlersHistory} =
-    let ResumableResult{wcsResponses,wcsRequests=Requests{unRequests},wcsCheckpointStore} = walletContractState
-        state' = Contract.Types.insertAndUpdate c wcsCheckpointStore wcsResponses event
-        events' = walletEvents |> event
-        history' = walletHandlersHistory |> unRequests
-    in s { walletContractState = state', walletEvents = events', walletHandlersHistory = history'}
-
-data ContractTraceState s e a =
-    ContractTraceState
-        { _ctsWalletStates :: Map Wallet (WalletState s e a)
-        -- ^ The state of the contract instance (per wallet). To get
-        --   the 'Record' of a sequence of events, use
-        --   'Language.Plutus.Contract.Resumable.runResumable'.
-        , _ctsContract     :: Contract s e a
-        -- ^ Current state of the contract
-        }
-
-eventsByWallet :: ContractTraceState s e a -> Map Wallet [Response (Event s)]
-eventsByWallet = fmap (toList . walletEvents) . _ctsWalletStates
-
-handlersByWallet :: ContractTraceState s e a -> Map Wallet [[State.Request (Handlers s)]]
-handlersByWallet = fmap (toList . walletHandlersHistory) . _ctsWalletStates
-
-checkpointStoreByWallet :: ContractTraceState s e a -> Map Wallet CheckpointStore
-checkpointStoreByWallet = fmap (wcsCheckpointStore . walletContractState) . _ctsWalletStates
-
-makeLenses ''ContractTraceState
-
-{-| A variant of 'addEvent' that takes the name of the endpoint as a value
-    instead of a type argument. This is useful for the playground where we
-    don't have the type-level symbol of user-defined endpoint calls.
-
-    Unfortunately this requires the 'V.Forall (Output s) V.Unconstrained1'
-    constraint. Luckily 'V.Forall (Output s) V.Unconstrained1' holds for all
-    schemas, so it doesn't restrict the callers of 'addNamedEvent'. But we
-    have to propagate it up to the top level :(
-
--}
-addNamedEvent ::
-    forall s e a effs.
-    ( V.Forall (Output s) V.Unconstrained1 -- TODO: remove
-    , Member (Error EndpointError) effs
-    , Member (State (ContractTraceState s (TraceError e) a)) effs
-    )
-    => String -- endpoint name
-    -> Wallet
-    -> Event s
-    -> Eff effs ()
-addNamedEvent endpointName wallet event = do
-    let filterReq Request{rqID, itID, rqRequest=Handlers v} = do
-            guard $
-                (V.eraseWithLabels @V.Unconstrained1 (const ()) v)
-                    == (endpointName, ())
-            Just Response{rspRqID=rqID, rspItID=itID, rspResponse=event}
-    hks <- mapMaybe filterReq <$> getHooks @s @e @a wallet >>= \case
-            [] -> throwError $ EndpointNotActive Nothing $ EndpointDescription endpointName
-            [x] -> pure x
-            _ -> throwError $ MoreThanOneEndpointActive $ EndpointDescription endpointName
-    addResponse @s @e @a wallet hks
-
-
--- | Add a 'Response' to the wallet's trace
-addResponse
-    :: forall s e a effs.
-    ( Member (State (ContractTraceState s (TraceError e) a)) effs
-    )
-    => Wallet
-    -> Response (Event s)
-    -> Eff effs ()
-addResponse w e = Eff.monadStateToState @(ContractTraceState s (TraceError e) a) $ do
-    con <- use ctsContract
-    let go st =
-            let theState = fromMaybe (emptyWalletState con) st
-             in Just (addEventWalletState con e theState)
-    ctsWalletStates %= Map.alter go w
-
--- | Get the hooks that a contract is currently waiting for
-getHooks
-    :: forall s e a effs.
-    ( Member (State (ContractTraceState s (TraceError e) a)) effs )
-    => Wallet
-    -> Eff effs [Request (Handlers s)]
-getHooks w =
-    foldMap walletHandlers . Map.lookup w <$> gets @(ContractTraceState s (TraceError e) a) (view ctsWalletStates)
-
-data ContractTraceResult s e a =
-    ContractTraceResult
-        { _ctrEmulatorState :: EmulatorState
-        -- ^ The emulator state at the end of the test
-        , _ctrTraceState    :: ContractTraceState s e a
-        -- ^ Final 'ContractTraceState'
-        }
-
-makeLenses ''ContractTraceResult
 
 makeTimed :: Member (State EmulatorState) effs => EmulatorNotifyLogMsg -> Eff effs EM.EmulatorEvent
 makeTimed e = do
