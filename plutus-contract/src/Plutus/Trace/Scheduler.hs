@@ -34,21 +34,21 @@ module Plutus.Trace.Scheduler(
     ) where
 
 
-import           Control.Lens hiding (Empty)
-import Data.Map (Map)
-import Data.Map as Map
+import           Control.Lens                  hiding (Empty)
 import           Control.Monad.Freer
 import           Control.Monad.Freer.Coroutine
 import           Control.Monad.Freer.Reader
-import Data.HashSet (HashSet)
-import qualified Data.HashSet as HashSet
 import           Data.Hashable                 (Hashable)
 import           Data.HashMap.Strict           (HashMap)
 import qualified Data.HashMap.Strict           as HashMap
-import           Data.Sequence                 (Seq(..))
+import           Data.HashSet                  (HashSet)
+import qualified Data.HashSet                  as HashSet
+import           Data.Map                      (Map)
+import           Data.Map                      as Map
+import           Data.Sequence                 (Seq (..))
 import qualified Data.Sequence                 as Seq
+import qualified Debug.Trace                   as Trace
 import           GHC.Generics                  (Generic)
-import qualified Debug.Trace as Trace
 
 newtype ThreadId = ThreadId { unThreadId :: Int }
     deriving stock (Eq, Ord, Show, Generic)
@@ -91,11 +91,11 @@ data EmThread effs systemEvent =
 --   each 'Priority' level.
 data SchedulerState effs systemEvent
     = SchedulerState
-        { _highPrio     :: Seq (EmThread effs systemEvent)
-        , _lowPrio      :: Seq (EmThread effs systemEvent)
-        , _sleeping     :: Seq (EmThread effs systemEvent)
-        , _lastThreadId :: ThreadId
-        , _mailboxes    :: HashMap ThreadId (Seq systemEvent)
+        { _highPrio      :: Seq (EmThread effs systemEvent)
+        , _lowPrio       :: Seq (EmThread effs systemEvent)
+        , _sleeping      :: Seq (EmThread effs systemEvent)
+        , _lastThreadId  :: ThreadId
+        , _mailboxes     :: HashMap ThreadId (Seq systemEvent)
         , _activeThreads :: Map ThreadType (HashSet ThreadId)
         }
 
@@ -107,7 +107,7 @@ desc SchedulerState{_highPrio, _lowPrio, _sleeping} =
     -- "[High priority: "
     --     <> show (_threadId <$> _highPrio)
     --     <> "; low priority: "
-    --     <> show (_threadId <$> _lowPrio) 
+    --     <> show (_threadId <$> _lowPrio)
     --     <> "; sleeping: "
     --     <> show (_threadId <$> _sleeping)
     --     <> "; mailboxes: "
@@ -245,7 +245,7 @@ dequeueThread s =
             x :<| xs -> Just (s & lowPrio .~ xs, x)
             Empty -> case s ^. sleeping of
                 x :<| xs -> Just (s & sleeping .~ xs, x)
-                Empty  -> Nothing
+                Empty    -> Nothing
 
 dequeueMessage :: SchedulerState effs systemEvent -> ThreadId -> Maybe (SchedulerState effs systemEvent, systemEvent)
 dequeueMessage s i = do

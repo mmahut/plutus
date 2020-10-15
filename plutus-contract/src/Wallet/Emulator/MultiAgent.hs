@@ -224,9 +224,6 @@ signingProcessState wallet = walletSigningProcessStates . at wallet . anon (SP.d
 chainOldestFirst :: Lens' EmulatorState Blockchain
 chainOldestFirst = chainState . Chain.chainNewestFirst . reversed
 
-chainNewestFirst :: Lens' EmulatorState Blockchain
-chainNewestFirst = chainState . Chain.chainNewestFirst
-
 chainUtxo :: Getter EmulatorState AM.AddressMap
 chainUtxo = chainState . Chain.chainNewestFirst . to AM.fromChain
 

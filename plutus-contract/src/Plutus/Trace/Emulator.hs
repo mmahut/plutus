@@ -30,23 +30,24 @@ import           Control.Monad                                   (void)
 import           Control.Monad.Freer
 import           Control.Monad.Freer.Coroutine                   (Yield)
 import           Control.Monad.Freer.Error                       (Error, runError)
-import           Control.Monad.Freer.Extras                      (raiseEnd, wrapError, raiseEnd4)
+import           Control.Monad.Freer.Extras                      (raiseEnd, raiseEnd4, wrapError)
 import           Control.Monad.Freer.Reader                      (runReader)
 import           Control.Monad.Freer.State                       (State, evalState, runState)
 import qualified Data.Aeson                                      as JSON
+import qualified Data.Map                                        as Map
 import           Data.Proxy                                      (Proxy)
 import           Language.Plutus.Contract                        (Contract, HasEndpoint)
 import qualified Language.Plutus.Contract.Effects.ExposeEndpoint as Endpoint
 import           Ledger.Value                                    (Value)
-import qualified Data.Map as Map
-import           Plutus.Trace.Scheduler                          (Priority (..), SysCall (..), SystemCall, fork,
-                                                                  mkSysCall, runThreads, sleep, ThreadType(..))
-import           Wallet.API                                      (defaultSlotRange, payToPublicKey_, WalletAPIError)
+import           Plutus.Trace.Scheduler                          (Priority (..), SysCall (..), SystemCall,
+                                                                  ThreadType (..), fork, mkSysCall, runThreads, sleep)
+import           Wallet.API                                      (WalletAPIError, defaultSlotRange, payToPublicKey_)
 import qualified Wallet.Emulator                                 as EM
 import           Wallet.Emulator.Chain                           (ChainControlEffect, ChainEffect)
 import           Wallet.Emulator.MultiAgent                      (MultiAgentEffect, walletAction)
 import           Wallet.Emulator.Wallet                          (Wallet (..))
 
+import           Language.Plutus.Contract.Trace                  (InitialDistribution, defaultDist)
 import           Plutus.Trace.Effects.ContractInstanceId         (ContractInstanceIdEff, handleDeterministicIds, nextId)
 import           Plutus.Trace.Emulator.ContractInstance          (ContractInstanceError, contractThread, getThread)
 import           Plutus.Trace.Emulator.System                    (launchSystemThreads)
@@ -55,9 +56,6 @@ import           Plutus.Trace.Emulator.Types                     (ContractConstr
                                                                   EmulatorLocal (..), EmulatorThreads)
 import qualified Plutus.Trace.Emulator.Types                     as Types
 import           Plutus.Trace.Types
-import Language.Plutus.Contract.Trace (InitialDistribution, defaultDist)
-import qualified Debug.Trace as Trace
-
 
 -- | Run a 'Trace Emulator', returning the final state and possibly an error
 runEmulatorTrace :: EmulatorConfig -> Eff '[Trace Emulator] () -> (Either EmulatorErr (), EM.EmulatorState)

@@ -17,12 +17,13 @@ import           Data.Foldable                 (traverse_)
 import           Wallet.Emulator.Chain         (ChainControlEffect, ChainEffect, getCurrentSlot, processBlock)
 import           Wallet.Emulator.MultiAgent    (MultiAgentEffect, walletControlAction)
 
+import qualified Debug.Trace                   as Trace
 import           Plutus.Trace.Emulator.Types   (EmulatorEvent (..))
-import           Plutus.Trace.Scheduler        (Priority (..), SysCall (..), SystemCall, fork, mkSysCall, sleep, ThreadType(..))
+import           Plutus.Trace.Scheduler        (Priority (..), SysCall (..), SystemCall, ThreadType (..), fork,
+                                                mkSysCall, sleep)
 import           Wallet.Emulator.ChainIndex    (chainIndexNotify)
 import           Wallet.Emulator.NodeClient    (ChainClientNotification (..), clientNotify)
 import           Wallet.Emulator.Wallet        (Wallet (..))
-import qualified Debug.Trace as Trace
 
 launchSystemThreads :: forall effs.
     ( Member ChainControlEffect effs

@@ -44,10 +44,10 @@ module Language.Plutus.Contract.Test(
 
 import           Control.Lens                                    (at, view, (^.))
 import           Control.Monad                                   (guard, unless)
+import           Control.Monad.Freer                             (Eff)
 import           Control.Monad.Freer.Log                         (LogMessage (..))
 import           Control.Monad.Writer                            (MonadWriter (..), Writer, runWriter)
 import qualified Data.Aeson                                      as JSON
-import Control.Monad.Freer (Eff)
 import           Data.Bifunctor                                  (Bifunctor (..))
 import           Data.Foldable                                   (fold, toList)
 import           Data.Functor.Contravariant                      (Contravariant (..), Op (..))
@@ -104,7 +104,7 @@ import qualified Wallet.Emulator.NodeClient                      as EM
 
 import           Language.Plutus.Contract.Schema                 (Event (..), Handlers (..), Input, Output)
 import           Language.Plutus.Contract.Trace                  as X
-import Plutus.Trace (Trace, Emulator)
+import           Plutus.Trace                                    (Emulator, Trace)
 
 newtype PredF f a = PredF { unPredF :: a -> f Bool }
     deriving Contravariant via (Op (f Bool))

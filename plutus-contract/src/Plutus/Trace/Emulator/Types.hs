@@ -43,9 +43,9 @@ import           Ledger.Tx                       (Tx)
 import           Ledger.Value                    (Value)
 import           Plutus.Trace.Scheduler          (SystemCall, ThreadId)
 import           Plutus.Trace.Types              (Trace (..), TraceBackend (..))
+import           Wallet.Emulator.SigningProcess  (SigningProcess)
 import           Wallet.Emulator.Wallet          (Wallet (..))
 import           Wallet.Types                    (ContractInstanceId, Notification)
-import Wallet.Emulator.SigningProcess (SigningProcess)
 
 type ContractConstraints s =
     ( V.Forall (Output s) V.Unconstrained1

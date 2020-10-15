@@ -52,50 +52,41 @@ module Language.Plutus.Contract.Trace
     , EM.walletPubKey
     , EM.walletPrivKey
     , allWallets
+    , makeTimed
     ) where
 
 import           Control.Arrow                                     ((>>>), (>>^))
-import           Control.Lens                                      (at, from, makeClassyPrisms, makeLenses, review, use,
+import           Control.Lens                                      (from, makeClassyPrisms, makeLenses, review, use,
                                                                     view, (%=))
-import           Control.Monad                                     (guard, unless, void)
+import           Control.Monad                                     (guard)
 import           Control.Monad.Freer
-import           Control.Monad.Freer.Error                         (Error, runError, throwError)
+import           Control.Monad.Freer.Error                         (Error, throwError)
 import qualified Control.Monad.Freer.Extras                        as Eff
-import           Control.Monad.Freer.Log                           (LogMessage, LogMsg, LogObserve, handleLogWriter,
-                                                                    logWarn, mapMLog)
-import           Control.Monad.Freer.Reader                        (Reader, runReader)
-import           Control.Monad.Freer.State                         (State, gets, runState)
-import           Control.Monad.Freer.Writer                        (Writer)
+import           Control.Monad.Freer.Log                           (LogMessage, LogMsg, LogObserve)
+import           Control.Monad.Freer.Reader                        (Reader)
+import           Control.Monad.Freer.State                         (State, gets)
 import qualified Data.Aeson.Types                                  as JSON
-import           Data.Bifunctor                                    (Bifunctor (..))
-import           Data.Foldable                                     (toList, traverse_)
+import           Data.Foldable                                     (toList)
 import           Data.Map                                          (Map)
 import qualified Data.Map                                          as Map
 import           Data.Maybe                                        (fromMaybe, mapMaybe)
-import           Data.Row                                          (KnownSymbol, Label (..), trial')
-import qualified Data.Row                                          as Row
-import qualified Data.Row.Extras                                   as V
 import qualified Data.Row.Internal                                 as V
 import qualified Data.Row.Variants                                 as V
 import           Data.Sequence                                     (Seq, (|>))
 import           Data.Text.Prettyprint.Doc                         (Pretty, pretty, (<+>))
-import           Data.Void                                         (Void)
 import           GHC.Generics                                      (Generic)
 
 import           Data.Text                                         (Text)
 import           Language.Plutus.Contract                          (Contract (..), HasAwaitSlot, HasTxConfirmation,
-                                                                    HasUtxoAt, HasWatchAddress, HasWriteTx, mapError)
+                                                                    HasUtxoAt, HasWatchAddress, HasWriteTx)
 import           Language.Plutus.Contract.Checkpoint               (CheckpointStore)
 import qualified Language.Plutus.Contract.Resumable                as State
-import           Language.Plutus.Contract.Schema                   (Event (..), Handlers (..), Input, Output)
+import           Language.Plutus.Contract.Schema                   (Event (..), Handlers (..), Output)
 import qualified Language.Plutus.Contract.Types                    as Contract.Types
-import qualified Language.Plutus.Contract.Wallet                   as Wallet
 
 import qualified Language.Plutus.Contract.Effects.AwaitSlot        as AwaitSlot
 import           Language.Plutus.Contract.Effects.AwaitTxConfirmed (TxConfirmed (..))
 import qualified Language.Plutus.Contract.Effects.AwaitTxConfirmed as AwaitTxConfirmed
-import           Language.Plutus.Contract.Effects.ExposeEndpoint   (HasEndpoint)
-import qualified Language.Plutus.Contract.Effects.ExposeEndpoint   as Endpoint
 import           Language.Plutus.Contract.Effects.Instance         (HasOwnId)
 import qualified Language.Plutus.Contract.Effects.Instance         as OwnInstance
 import           Language.Plutus.Contract.Effects.Notify           (HasContractNotify)
@@ -107,30 +98,22 @@ import qualified Language.Plutus.Contract.Effects.WatchAddress     as WatchAddre
 import qualified Language.Plutus.Contract.Effects.WriteTx          as WriteTx
 import           Language.Plutus.Contract.Resumable                (Request (..), Requests (..), Response (..))
 import           Language.Plutus.Contract.Trace.RequestHandler     (MaxIterations (..), RequestHandler (..),
-                                                                    RequestHandlerLogMsg, defaultMaxIterations,
-                                                                    maybeToHandler, tryHandler, wrapHandler)
+                                                                    RequestHandlerLogMsg, maybeToHandler)
 import qualified Language.Plutus.Contract.Trace.RequestHandler     as RequestHandler
 import           Language.Plutus.Contract.Types                    (ResumableResult (..))
 
 import qualified Ledger.Ada                                        as Ada
-import           Ledger.Address                                    (Address)
 import           Ledger.Value                                      (Value)
 
-import           Wallet.API                                        (ChainIndexEffect, SigningProcessEffect,
-                                                                    defaultSlotRange, payToPublicKey_)
-import           Wallet.Effects                                    (ContractRuntimeEffect (SendNotification),
-                                                                    WalletEffect)
-import           Wallet.Emulator                                   (EmulatorState, TxPool, Wallet)
+import           Wallet.API                                        (ChainIndexEffect, SigningProcessEffect)
+import           Wallet.Effects                                    (ContractRuntimeEffect, WalletEffect)
+import           Wallet.Emulator                                   (EmulatorState, Wallet)
 import qualified Wallet.Emulator                                   as EM
 import           Wallet.Emulator.LogMessages                       (TxBalanceMsg)
-import           Wallet.Emulator.MultiAgent                        (EmulatedWalletEffects, _singleton)
+import           Wallet.Emulator.MultiAgent                        (EmulatedWalletEffects)
 import qualified Wallet.Emulator.MultiAgent                        as EM
-import           Wallet.Emulator.Notify                            (EmulatorContractNotifyEffect (..),
-                                                                    EmulatorNotifyLogMsg (..))
-import           Wallet.Emulator.SigningProcess                    (SigningProcess)
-import qualified Wallet.Emulator.SigningProcess                    as EM
+import           Wallet.Emulator.Notify                            (EmulatorNotifyLogMsg (..))
 import           Wallet.Types                                      (ContractInstanceId, EndpointDescription (..),
-                                                                    EndpointValue (..), Notification (..),
                                                                     NotificationError (..))
 
 data EndpointError =
@@ -212,13 +195,6 @@ checkpointStoreByWallet :: ContractTraceState s e a -> Map Wallet CheckpointStor
 checkpointStoreByWallet = fmap (wcsCheckpointStore . walletContractState) . _ctsWalletStates
 
 makeLenses ''ContractTraceState
-
-initState ::
-    [Wallet]
-    -> Contract s e a
-    -> ContractTraceState s e a
-initState wllts con = ContractTraceState wallets con where
-    wallets = Map.fromList $ fmap (\a -> (a,emptyWalletState con)) wllts
 
 {-| A variant of 'addEvent' that takes the name of the endpoint as a value
     instead of a type argument. This is useful for the playground where we
