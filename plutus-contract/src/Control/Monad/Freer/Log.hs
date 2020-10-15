@@ -180,9 +180,9 @@ mapLog ::
     forall a b c effs.
     Member (LogMsg b) effs
     => (a -> b)
-    -> Eff (LogMsg a ': effs) c
-    -> Eff effs c
-mapLog f = interpret $ \case
+    -> LogMsg a
+    ~> Eff effs
+mapLog f = \case
     LMessage msg -> send $ LMessage (fmap f msg)
 
 -- | Re-interpret a logging effect by mapping the
@@ -202,7 +202,7 @@ renderLogMessages ::
     ( Member (LogMsg Text) effs
     , Pretty a
     )
-    => Eff (LogMsg a ': effs)
+    => LogMsg a
     ~> Eff effs
 renderLogMessages =
     mapLog (Render.renderStrict . layoutPretty defaultLayoutOptions . pretty)

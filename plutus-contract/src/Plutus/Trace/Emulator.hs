@@ -34,10 +34,11 @@ import           Control.Monad.Freer.Coroutine                   (Yield)
 import           Control.Monad.Freer.Error                       (Error, runError)
 import           Control.Monad.Freer.Extras                      (raiseEnd, raiseEnd4, raiseEnd5, wrapError,
                                                                   writeIntoState)
-import           Control.Monad.Freer.Log                         (LogMessage, LogMsg, handleLogWriter)
+import           Control.Monad.Freer.Log                         (LogMessage, LogMsg (..), handleLogWriter, mapLog,
+                                                                  mapMLog)
 import           Control.Monad.Freer.Reader                      (runReader)
-import           Control.Monad.Freer.State                       (State, evalState, runState)
-import           Control.Monad.Freer.Writer                      (Writer)
+import           Control.Monad.Freer.State                       (State, evalState, gets, runState)
+import           Control.Monad.Freer.Writer                      (Writer, tell)
 import qualified Data.Aeson                                      as JSON
 import qualified Data.Map                                        as Map
 import           Data.Proxy                                      (Proxy)
@@ -50,7 +51,8 @@ import           Plutus.Trace.Scheduler                          (Priority (..),
 import           Wallet.API                                      (WalletAPIError, defaultSlotRange, payToPublicKey_)
 import qualified Wallet.Emulator                                 as EM
 import           Wallet.Emulator.Chain                           (ChainControlEffect, ChainEffect, getCurrentSlot)
-import           Wallet.Emulator.MultiAgent                      (EmulatorState, MultiAgentEffect, emulatorLog,
+import           Wallet.Emulator.MultiAgent                      (EmulatorEvent, EmulatorEvent', EmulatorState,
+                                                                  EmulatorTimeEvent (..), MultiAgentEffect, emulatorLog,
                                                                   emulatorTimeEvent, schedulerEvent, walletAction,
                                                                   walletControlAction)
 import           Wallet.Emulator.Wallet                          (SigningProcess, Wallet (..))
@@ -88,30 +90,31 @@ runTraceBackend ::
 runTraceBackend conf =
     run
     . runState (initialState conf)
+    . interpret (writeIntoState emulatorLog)
+    . interpret (handleLogWriter @EmulatorEvent @[LogMessage EmulatorEvent] (unto return))
+    . reinterpret2 @_ @(LogMsg EmulatorEvent) @(Writer [LogMessage EmulatorEvent]) (mkTimedLogs @EmulatorEvent')
     . runError
     . wrapError WalletErr
     . wrapError AssertionErr
     . wrapError InstanceErr
     . EM.processEmulated
-    . handleSchedulerLog
+    . interpret (mapLog (review schedulerEvent))
     . raiseEnd5
 
--- | Write the 'SchedulerLog' messages into the emulator's
---   log
-handleSchedulerLog ::
-    ( Member (State EmulatorState) effs
-    , Member ChainEffect effs
+-- | Annotate the emulator log messages with the current system time
+--   (slot number)
+mkTimedLogs :: forall a effs.
+    ( Member (LogMsg (EmulatorTimeEvent a)) effs
+    , Member (State EmulatorState) effs
     )
-    => Eff (LogMsg SchedulerLog ': effs)
+    => LogMsg a
     ~> Eff effs
-handleSchedulerLog action = do
-    emulatorTime :: Slot <- getCurrentSlot
-    let timed :: forall e. Prism' (EM.EmulatorTimeEvent e) e
-        timed = emulatorTimeEvent emulatorTime
-        p :: AReview [LogMessage EM.EmulatorEvent] (LogMessage SchedulerLog)
-        p = unto (\x -> [x]) . below (timed . schedulerEvent)
-    interpret (writeIntoState emulatorLog)
-        $ reinterpret @_ @(Writer [LogMessage EM.EmulatorEvent]) (handleLogWriter p) action
+mkTimedLogs = mapMLog f where
+    f :: a -> Eff effs (EmulatorTimeEvent a)
+    f a =
+        EmulatorTimeEvent
+            <$> gets (view $ EM.chainState . EM.currentSlot)
+            <*> pure a
 
 data EmulatorConfig =
     EmulatorConfig

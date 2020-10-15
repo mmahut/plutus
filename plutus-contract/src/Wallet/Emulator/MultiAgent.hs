@@ -23,7 +23,7 @@ import           Control.Monad.Freer
 import           Control.Monad.Freer.Error
 import           Control.Monad.Freer.Extras
 import           Control.Monad.Freer.Log     (LogLevel (..), LogMessage, LogMsg, LogObserve, handleLogWriter,
-                                              handleObserveLog, logMessage)
+                                              handleObserveLog, handleWriterLog, logMessage, mapLog)
 import qualified Control.Monad.Freer.Log     as Log
 import           Control.Monad.Freer.State
 import           Data.Aeson                  (FromJSON, ToJSON)
@@ -268,6 +268,7 @@ emulatorStateInitialDist mp = emulatorStatePool [tx] where
 
 type MultiAgentEffs =
     '[ State EmulatorState
+     , LogMsg EmulatorEvent'
      , Error WAPI.WalletAPIError
      , Error AssertionError
      , Chain.ChainEffect
@@ -280,24 +281,21 @@ handleMultiAgent
 handleMultiAgent = interpret $ \case
     -- TODO: catch, log, and rethrow wallet errors?
     WalletAction wallet act ->  do
-        emulatorTime :: Slot <- Chain.getCurrentSlot
         let
-            timed :: forall e. Prism' (EmulatorTimeEvent e) e
-            timed = emulatorTimeEvent emulatorTime
-            p1 :: AReview [LogMessage EmulatorEvent] [Wallet.WalletEvent]
-            p1 = below (logMessage Info . timed . walletEvent wallet)
-            p2 :: AReview [LogMessage EmulatorEvent] [NC.NodeClientEvent]
-            p2 = below (logMessage Info . timed . walletClientEvent wallet)
-            p3 :: AReview [LogMessage EmulatorEvent] (LogMessage ChainIndex.ChainIndexEvent)
-            p3 = _singleton . below (timed . chainIndexEvent wallet)
-            p4 :: AReview [LogMessage EmulatorEvent] (LogMessage T.Text)
-            p4 = _singleton . below (timed . walletEvent wallet . Wallet._GenericLog)
-            p5 :: AReview [LogMessage EmulatorEvent] (LogMessage RequestHandlerLogMsg)
-            p5 = _singleton . below (timed . walletEvent wallet . Wallet._RequestHandlerLog)
-            p6 :: AReview [LogMessage EmulatorEvent] (LogMessage TxBalanceMsg)
-            p6 = _singleton . below (timed . walletEvent wallet . Wallet._TxBalanceLog)
-            p7 :: AReview [LogMessage EmulatorEvent] (LogMessage Notify.EmulatorNotifyLogMsg)
-            p7 = _singleton . below (timed . notificationEvent)
+            p1 :: AReview EmulatorEvent' Wallet.WalletEvent
+            p1 = walletEvent wallet
+            p2 :: AReview EmulatorEvent' NC.NodeClientEvent
+            p2 = walletClientEvent wallet
+            p3 :: AReview EmulatorEvent' ChainIndex.ChainIndexEvent
+            p3 = chainIndexEvent wallet
+            p4 :: AReview EmulatorEvent' T.Text
+            p4 = walletEvent wallet . Wallet._GenericLog
+            p5 :: AReview EmulatorEvent' RequestHandlerLogMsg
+            p5 = walletEvent wallet . Wallet._RequestHandlerLog
+            p6 :: AReview EmulatorEvent' TxBalanceMsg
+            p6 = walletEvent wallet . Wallet._TxBalanceLog
+            p7 :: AReview EmulatorEvent' Notify.EmulatorNotifyLogMsg
+            p7 = notificationEvent
         act
             & raiseEnd9
             & Wallet.handleWallet
@@ -306,45 +304,44 @@ handleMultiAgent = interpret $ \case
             & ChainIndex.handleChainIndex
             & Wallet.handleSigningProcess
             & handleObserveLog
-            & interpret (handleLogWriter p5)
-            & interpret (handleLogWriter p6)
-            & interpret (handleLogWriter p4)
-            & interpret (handleLogWriter p7)
+            & interpret (mapLog (review p5))
+            & interpret (mapLog (review p6))
+            & interpret (mapLog (review p4))
+            & interpret (mapLog (review p7))
             & interpret (handleZoomedState (walletState wallet))
-            & interpret (handleZoomedWriter p1)
+            -- & reinterpret (handleWriterLog (const Info))
+            & interpret (mapLog (review p1))
             & interpret (handleZoomedState (walletState wallet . Wallet.nodeClient))
-            & interpret (handleZoomedWriter p2)
+            -- & reinterpret (handleWriterLog (const Info))
+            & interpret (mapLog (review p2))
             & interpret (handleZoomedState (walletState wallet . Wallet.chainIndex))
-            & interpret (handleLogWriter p3)
+            & interpret (mapLog (review p3))
             & interpret (handleZoomedState (walletState wallet . Wallet.signingProcess))
             & interpret (writeIntoState emulatorLog)
 
     WalletControlAction wallet act -> do
-        emulatorTime :: Slot <- Chain.getCurrentSlot
         let
-            timed :: forall e. Prism' (EmulatorTimeEvent e) e
-            timed = emulatorTimeEvent emulatorTime
-            p1 :: AReview [LogMessage EmulatorEvent] [Wallet.WalletEvent]
-            p1 = below (logMessage Info . timed . walletEvent wallet)
-            p2 :: AReview [LogMessage EmulatorEvent] [NC.NodeClientEvent]
-            p2 = below (logMessage Info . timed . walletClientEvent wallet)
-            p3 :: AReview [LogMessage EmulatorEvent] (Log.LogMessage ChainIndex.ChainIndexEvent)
-            p3 = _singleton . below (timed . chainIndexEvent wallet)
-            p4 :: AReview [LogMessage EmulatorEvent] (Log.LogMessage T.Text)
-            p4 = _singleton . below (timed . walletEvent wallet . Wallet._GenericLog)
+            p1 :: AReview EmulatorEvent' Wallet.WalletEvent
+            p1 = walletEvent wallet
+            p2 :: AReview EmulatorEvent' NC.NodeClientEvent
+            p2 = walletClientEvent wallet
+            p3 :: AReview EmulatorEvent' ChainIndex.ChainIndexEvent
+            p3 = chainIndexEvent wallet
+            p4 :: AReview EmulatorEvent' T.Text
+            p4 =  walletEvent wallet . Wallet._GenericLog
         act
             & raiseEnd5
             & NC.handleNodeControl
             & ChainIndex.handleChainIndexControl
             & Wallet.handleSigningProcessControl
             & handleObserveLog
-            & interpret (handleLogWriter p4)
+            & interpret (mapLog (review p4))
             & interpret (handleZoomedState (walletState wallet))
-            & interpret (handleZoomedWriter p1)
+            & interpret (mapLog (review p1))
             & interpret (handleZoomedState (walletState wallet . Wallet.nodeClient))
-            & interpret (handleZoomedWriter p2)
+            & interpret (mapLog (review p2))
             & interpret (handleZoomedState (walletState wallet . Wallet.chainIndex))
-            & interpret (handleLogWriter p3)
+            & interpret (mapLog (review p3))
             & interpret (handleZoomedState (walletState wallet . Wallet.signingProcess))
             & interpret (writeIntoState emulatorLog)
     Assertion a -> assert a

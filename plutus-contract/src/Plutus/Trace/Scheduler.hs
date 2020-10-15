@@ -60,7 +60,7 @@ import           GHC.Generics                     (Generic)
 newtype ThreadId = ThreadId { unThreadId :: Int }
     deriving stock (Eq, Ord, Show, Generic)
     deriving anyclass (Hashable, ToJSON, FromJSON)
-    deriving Pretty via (Tagged "ThreadId:" Int)
+    deriving Pretty via (Tagged "Thread" Int)
 
 initialThreadId :: ThreadId
 initialThreadId = ThreadId 0

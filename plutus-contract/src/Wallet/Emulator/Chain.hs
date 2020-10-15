@@ -14,22 +14,23 @@
 {-# LANGUAGE TypeOperators         #-}
 module Wallet.Emulator.Chain where
 
-import           Codec.Serialise            (Serialise)
-import           Control.Lens               hiding (index)
+import           Codec.Serialise           (Serialise)
+import           Control.Lens              hiding (index)
 import           Control.Monad.Freer
+import           Control.Monad.Freer.Log   (LogMsg, logInfo)
 import           Control.Monad.Freer.State
-import           Control.Monad.Freer.Writer
-import qualified Control.Monad.State        as S
-import           Data.Aeson                 (FromJSON, ToJSON)
-import           Data.List                  (partition)
-import           Data.List                  ((\\))
-import           Data.Maybe                 (isNothing)
+import qualified Control.Monad.State       as S
+import           Data.Aeson                (FromJSON, ToJSON)
+import           Data.Foldable             (traverse_)
+import           Data.List                 (partition)
+import           Data.List                 ((\\))
+import           Data.Maybe                (isNothing)
 import           Data.Text.Prettyprint.Doc
-import           Data.Traversable           (for)
-import           GHC.Generics               (Generic)
-import           Ledger                     (Block, Blockchain, Slot (..), Tx (..), TxId, txId)
-import qualified Ledger.Index               as Index
-import qualified Ledger.Interval            as Interval
+import           Data.Traversable          (for)
+import           GHC.Generics              (Generic)
+import           Ledger                    (Block, Blockchain, Slot (..), Tx (..), TxId, txId)
+import qualified Ledger.Index              as Index
+import qualified Ledger.Interval           as Interval
 
 -- | Events produced by the blockchain emulator.
 data ChainEvent =
@@ -78,7 +79,7 @@ queueTx tx = send (QueueTx tx)
 getCurrentSlot :: Member ChainEffect effs => Eff effs Slot
 getCurrentSlot = send GetCurrentSlot
 
-type ChainEffs = '[State ChainState, Writer [ChainEvent]]
+type ChainEffs = '[State ChainState, LogMsg ChainEvent]
 
 handleControlChain :: Members ChainEffs effs => ChainControlEffect ~> Eff effs
 handleControlChain = \case
@@ -94,7 +95,7 @@ handleControlChain = \case
                      & addBlock block
 
         put st'
-        tell events
+        traverse_ logInfo events
 
         pure block
 

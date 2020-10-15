@@ -16,6 +16,7 @@ module Wallet.Emulator.NodeClient where
 
 import           Control.Lens               hiding (index)
 import           Control.Monad.Freer
+import           Control.Monad.Freer.Log    (LogMsg, logInfo)
 import           Control.Monad.Freer.State
 import           Control.Monad.Freer.TH
 import           Control.Monad.Freer.Writer
@@ -54,7 +55,7 @@ data NodeClientControlEffect r where
     ClientNotify :: ChainClientNotification -> NodeClientControlEffect ()
 makeEffect ''NodeClientControlEffect
 
-type NodeClientEffs = '[ChainEffect, State NodeClientState, Writer [NodeClientEvent]]
+type NodeClientEffs = '[ChainEffect, State NodeClientState, LogMsg NodeClientEvent]
 
 handleNodeControl
     :: (Members NodeClientEffs effs)
@@ -68,6 +69,6 @@ handleNodeClient
     :: (Members NodeClientEffs effs)
     => Eff (NodeClientEffect ': effs) ~> Eff effs
 handleNodeClient = interpret $ \case
-    PublishTx tx -> queueTx tx >> tell [TxSubmit (txId tx)]
+    PublishTx tx -> queueTx tx >> logInfo (TxSubmit (txId tx))
     GetClientSlot -> gets _clientSlot
 

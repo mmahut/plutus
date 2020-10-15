@@ -62,7 +62,7 @@ import           Control.Lens               hiding (index)
 import           Control.Monad.Freer
 import           Control.Monad.Freer.Error  (Error)
 import qualified Control.Monad.Freer.Extras as Eff
-import           Control.Monad.Freer.Log    (LogLevel (..), LogMessage, logMessage)
+import           Control.Monad.Freer.Log    (LogLevel (..), LogMessage, LogMsg, logMessage, mapLog)
 import           Control.Monad.Freer.State  (State)
 import qualified Control.Monad.Freer.State  as Eff
 import           Control.Monad.Freer.Writer (Writer)
@@ -83,21 +83,16 @@ processEmulated :: forall effs.
     ( Member (Error WalletAPIError) effs
     , Member (Error AssertionError) effs
     , Member (State EmulatorState) effs
+    , Member (LogMsg EmulatorEvent') effs
     )
     => Eff (MultiAgentEffect ': ChainEffect ': ChainControlEffect ': effs)
     ~> Eff effs
-processEmulated act = do
-    emulatorTime <- Eff.gets (view $ chainState . currentSlot)
-    let
-        p1 :: Prism' [LogMessage EmulatorEvent] [ChainEvent]
-        p1 =  below (logMessage Info . emulatorTimeEvent emulatorTime . chainEvent)
+processEmulated act =
     act
         & handleMultiAgent
-        & reinterpret3 @ChainEffect @(State ChainState) @(Writer [ChainEvent]) handleChain
+        & reinterpret2 @ChainEffect @(State ChainState) @(LogMsg ChainEvent) handleChain
         & interpret (Eff.handleZoomedState chainState)
-        & interpret (Eff.handleZoomedWriter p1)
-        & interpret (Eff.writeIntoState emulatorLog)
-        & reinterpret3 @ChainControlEffect @(State ChainState) @(Writer [ChainEvent]) handleControlChain
+        & interpret (mapLog (review chainEvent))
+        & reinterpret2 @ChainControlEffect @(State ChainState) @(LogMsg ChainEvent) handleControlChain
         & interpret (Eff.handleZoomedState chainState)
-        & interpret (Eff.handleZoomedWriter p1)
-        & interpret (Eff.writeIntoState emulatorLog)
+        & interpret (mapLog (review chainEvent))
