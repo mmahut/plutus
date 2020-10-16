@@ -86,7 +86,7 @@ handleChainIndexControl
 handleChainIndexControl = interpret $ \case
     ChainIndexNotify (SlotChanged sl) -> modify (idxCurrentSlot .~ Just (Max sl))
     ChainIndexNotify (BlockValidated txns) -> do
-        logInfo $ ReceiveBlockNotification (length txns)
+        logDebug $ ReceiveBlockNotification (length txns)
         modify (idxConfirmedBlocks <>~ pure txns)
         (cs, addressMap) <- (,) <$> gets _idxCurrentSlot <*> gets _idxWatchedAddresses
         let currentSlot = maybe 0 getMax cs

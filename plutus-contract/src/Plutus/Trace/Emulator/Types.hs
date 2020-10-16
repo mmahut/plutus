@@ -28,6 +28,9 @@ module Plutus.Trace.Emulator.Types(
     , callEndpoint
     , payToWallet
     , waitUntilSlot
+    , waitNSlots
+    , agentState
+    , chainState
     -- * Logging
     , ContractInstanceLog(..)
     , ContractInstanceError(..)
@@ -48,12 +51,16 @@ import           GHC.Generics                       (Generic)
 import           Language.Plutus.Contract           (Contract, HasBlockchainActions, HasEndpoint)
 import           Language.Plutus.Contract.Resumable (Request (..), Requests (..), Response (..))
 import           Language.Plutus.Contract.Schema    (Input, Output)
-import           Ledger.Slot                        (Slot)
+import           Ledger.Slot                        (Slot (..))
 import           Ledger.Tx                          (Tx)
 import           Ledger.Value                       (Value)
+import           Numeric.Natural                    (Natural)
 import           Plutus.Trace.Scheduler             (SystemCall, ThreadId)
 import           Plutus.Trace.Types                 (Trace (..), TraceBackend (..))
-import           Wallet.Emulator.Wallet             (SigningProcess, Wallet (..))
+import           Wallet.Emulator.Chain              (ChainState)
+import qualified Wallet.Emulator.Chain              as ChainState
+import           Wallet.Emulator.Wallet             (SigningProcess, Wallet (..), WalletState)
+import qualified Wallet.Emulator.Wallet             as Wallet
 import           Wallet.Types                       (ContractInstanceId, Notification)
 
 type ContractConstraints s =
@@ -103,9 +110,11 @@ data EmulatorLocal r where
     CallEndpointEm :: forall l ep s e. (ContractConstraints s, HasEndpoint l ep s) => Proxy l -> ContractHandle s e -> ep -> EmulatorLocal ()
     PayToWallet :: Wallet -> Value -> EmulatorLocal ()
     SetSigningProcess :: SigningProcess -> EmulatorLocal ()
+    AgentState :: EmulatorLocal WalletState
 
 data EmulatorGlobal r where
     WaitUntilSlot :: Slot -> EmulatorGlobal Slot
+    ChainState :: EmulatorGlobal ChainState
 
 instance TraceBackend Emulator where
     type LocalAction Emulator = EmulatorLocal
@@ -125,6 +134,17 @@ payToWallet from_ to_ = send @(Trace Emulator) . RunLocal from_ . PayToWallet to
 
 waitUntilSlot :: Slot -> EmulatorTrace Slot
 waitUntilSlot sl = send @(Trace Emulator) $ RunGlobal (WaitUntilSlot sl)
+
+agentState :: Wallet -> EmulatorTrace WalletState
+agentState wallet = send @(Trace Emulator) $ RunLocal wallet AgentState
+
+chainState :: EmulatorTrace ChainState
+chainState = send @(Trace Emulator) $ RunGlobal ChainState
+
+waitNSlots :: Natural -> EmulatorTrace Slot
+waitNSlots n = do
+    Slot c <- view ChainState.currentSlot <$> chainState
+    waitUntilSlot (Slot $ c + fromIntegral n)
 
 data ContractInstanceError =
     ThreadIdNotFound ContractInstanceId
