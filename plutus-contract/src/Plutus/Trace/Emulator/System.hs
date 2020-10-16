@@ -30,13 +30,14 @@ launchSystemThreads :: forall effs.
     , Member MultiAgentEffect effs
     , Member ChainEffect effs
     )
-    => Eff (Yield (SystemCall effs EmulatorMessage) (Maybe EmulatorMessage) ': effs) ()
-launchSystemThreads = do
+    => [Wallet]
+    -> Eff (Yield (SystemCall effs EmulatorMessage) (Maybe EmulatorMessage) ': effs) ()
+launchSystemThreads wallets = do
     _ <- sleep @effs @EmulatorMessage Sleeping
     -- 1. Block maker
     _ <- fork @effs @EmulatorMessage System High (blockMaker @effs)
     -- 2. Threads for updating the agents' states
-    traverse_ (fork @effs @EmulatorMessage System Low . agentThread @effs) (Wallet <$> [1])
+    traverse_ (fork @effs @EmulatorMessage System Low . agentThread @effs) wallets
 
 blockMaker :: forall effs effs2.
     ( Member ChainControlEffect effs2

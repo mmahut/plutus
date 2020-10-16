@@ -1,6 +1,8 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE DerivingStrategies  #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
@@ -26,25 +28,33 @@ module Plutus.Trace.Emulator.Types(
     , callEndpoint
     , payToWallet
     , waitUntilSlot
+    -- * Logging
+    , ContractInstanceLog(..)
+    , ContractInstanceError(..)
+    , ContractInstanceMsg(..)
     ) where
 
 import           Control.Lens
 import           Control.Monad.Freer
 import           Control.Monad.Freer.Coroutine
-import           Control.Monad.Freer.Reader      (Reader)
-import qualified Data.Aeson                      as JSON
-import           Data.Map                        (Map)
-import           Data.Proxy                      (Proxy (..))
-import qualified Data.Row.Internal               as V
-import           Language.Plutus.Contract        (Contract, HasBlockchainActions, HasEndpoint)
-import           Language.Plutus.Contract.Schema (Input, Output)
-import           Ledger.Slot                     (Slot)
-import           Ledger.Tx                       (Tx)
-import           Ledger.Value                    (Value)
-import           Plutus.Trace.Scheduler          (SystemCall, ThreadId)
-import           Plutus.Trace.Types              (Trace (..), TraceBackend (..))
-import           Wallet.Emulator.Wallet          (SigningProcess, Wallet (..))
-import           Wallet.Types                    (ContractInstanceId, Notification)
+import           Control.Monad.Freer.Log            (LogMsg)
+import           Control.Monad.Freer.Reader         (Reader)
+import           Data.Aeson                         (FromJSON, ToJSON)
+import qualified Data.Aeson                         as JSON
+import           Data.Map                           (Map)
+import           Data.Proxy                         (Proxy (..))
+import qualified Data.Row.Internal                  as V
+import           GHC.Generics                       (Generic)
+import           Language.Plutus.Contract           (Contract, HasBlockchainActions, HasEndpoint)
+import           Language.Plutus.Contract.Resumable (Request (..), Requests (..), Response (..))
+import           Language.Plutus.Contract.Schema    (Input, Output)
+import           Ledger.Slot                        (Slot)
+import           Ledger.Tx                          (Tx)
+import           Ledger.Value                       (Value)
+import           Plutus.Trace.Scheduler             (SystemCall, ThreadId)
+import           Plutus.Trace.Types                 (Trace (..), TraceBackend (..))
+import           Wallet.Emulator.Wallet             (SigningProcess, Wallet (..))
+import           Wallet.Types                       (ContractInstanceId, Notification)
 
 type ContractConstraints s =
     ( V.Forall (Output s) V.Unconstrained1
@@ -52,6 +62,8 @@ type ContractConstraints s =
     , V.AllUniqueLabels (Input s)
     , V.Forall (Input s) JSON.FromJSON
     , V.Forall (Input s) JSON.ToJSON
+    , V.Forall (Output s) JSON.FromJSON
+    , V.Forall (Output s) JSON.ToJSON
     , HasBlockchainActions s
     )
 
@@ -71,7 +83,8 @@ newtype EmulatorThreads =
 makeLenses ''EmulatorThreads
 
 type EmulatorAgentThreadEffs effs =
-    Reader Wallet
+    LogMsg ContractInstanceLog
+    ': Reader Wallet
     ': Reader ThreadId
     ': Yield (SystemCall effs EmulatorMessage) (Maybe EmulatorMessage)
     ': effs
@@ -112,3 +125,28 @@ payToWallet from_ to_ = send @(Trace Emulator) . RunLocal from_ . PayToWallet to
 
 waitUntilSlot :: Slot -> EmulatorTrace Slot
 waitUntilSlot sl = send @(Trace Emulator) $ RunGlobal (WaitUntilSlot sl)
+
+data ContractInstanceError =
+    ThreadIdNotFound ContractInstanceId
+    | JSONDecodingError String
+    deriving stock (Eq, Ord, Show, Generic)
+    deriving anyclass (ToJSON, FromJSON)
+
+data ContractInstanceMsg =
+    Started
+    | Stopped
+    | ReceiveEndpointCall JSON.Value
+    | NoRequestsHandled
+    | HandledRequest (Response JSON.Value)
+    | HandleInstanceRequests [Request JSON.Value]
+    | InstErr ContractInstanceError
+    deriving stock (Eq, Ord, Show, Generic)
+    deriving anyclass (ToJSON, FromJSON)
+
+data ContractInstanceLog =
+    ContractInstanceLog
+        { cilMessage :: ContractInstanceMsg
+        , cilId      :: ContractInstanceId
+        }
+    deriving stock (Eq, Ord, Show, Generic)
+    deriving anyclass (ToJSON, FromJSON)

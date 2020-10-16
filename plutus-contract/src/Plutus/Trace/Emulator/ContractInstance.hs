@@ -1,6 +1,8 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DerivingStrategies  #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -18,18 +20,21 @@ module Plutus.Trace.Emulator.ContractInstance(
     ) where
 
 import           Control.Lens
-import           Control.Monad                                 (guard, unless, void)
+import           Control.Monad                                 (guard, unless, void, when)
 import           Control.Monad.Freer
 import           Control.Monad.Freer.Coroutine                 (Yield)
 import           Control.Monad.Freer.Error                     (Error, throwError)
 import           Control.Monad.Freer.Extras                    (raiseEnd11)
-import           Control.Monad.Freer.Log                       (LogMessage, LogMsg, LogObserve)
+import           Control.Monad.Freer.Log                       (LogMessage, LogMsg, LogObserve, logDebug, logError,
+                                                                logInfo, mapLog)
 import           Control.Monad.Freer.Reader                    (Reader, ask, runReader)
 import           Control.Monad.Freer.State                     (State, evalState, gets, modify)
+import           Data.Aeson                                    (FromJSON, ToJSON)
 import qualified Data.Aeson.Types                              as JSON
 import           Data.Foldable                                 (traverse_)
 import           Data.Sequence                                 (Seq)
 import qualified Data.Text                                     as T
+import           GHC.Generics                                  (Generic)
 import           Language.Plutus.Contract                      (Contract (..))
 import           Language.Plutus.Contract.Resumable            (Request (..), Requests (..), Response (..))
 import qualified Language.Plutus.Contract.Resumable            as State
@@ -40,8 +45,10 @@ import           Language.Plutus.Contract.Trace.RequestHandler (RequestHandler (
 import           Language.Plutus.Contract.Types                (ResumableResult (..))
 import qualified Language.Plutus.Contract.Types                as Contract.Types
 import           Plutus.Trace.Emulator.Types                   (ContractConstraints, ContractHandle (..),
-                                                                EmulatorAgentThreadEffs, EmulatorMessage (..),
-                                                                EmulatorThreads, instanceIdThreads)
+                                                                ContractInstanceError (..), ContractInstanceLog (..),
+                                                                ContractInstanceMsg (..), EmulatorAgentThreadEffs,
+                                                                EmulatorMessage (..), EmulatorThreads,
+                                                                instanceIdThreads)
 import           Plutus.Trace.Scheduler                        (Priority (..), SysCall (..), SystemCall, ThreadId,
                                                                 mkSysCall, sleep)
 import qualified Wallet.API                                    as WAPI
@@ -56,7 +63,8 @@ import           Wallet.Types                                  (ContractInstance
 -- | Effects available to threads that run in the context of specific
 --   agents (ie wallets)
 type ContractInstanceThreadEffs s e a effs =
-    State (ContractInstanceState s e a)
+    LogMsg ContractInstanceMsg
+    ': State (ContractInstanceState s e a)
     ': Reader ContractInstanceId
     ': ContractRuntimeEffect
     ': EmulatorAgentThreadEffs effs
@@ -91,7 +99,9 @@ contractThread ContractHandle{chInstanceId, chContract} = do
     handleContractRuntime @effs
         $ runReader chInstanceId
         $ evalState (emptyInstanceState chContract)
+        $ interpret (mapLog (\m -> ContractInstanceLog m chInstanceId))
         $ do
+            logInfo Started
             msg <- mkSysCall @effs @EmulatorMessage Low Suspend
             runInstance msg
 
@@ -111,11 +121,6 @@ getThread :: forall effs.
 getThread t = do
     r <- gets (view $ instanceIdThreads . at t)
     maybe (throwError $ ThreadIdNotFound t) pure r
-
-data ContractInstanceError =
-    ThreadIdNotFound ContractInstanceId
-    | JSONDecodingError String
-    deriving Show
 
 data ContractInstanceState s e a =
     ContractInstanceState
@@ -144,23 +149,29 @@ runInstance :: forall s e a effs.
     -> Eff (ContractInstanceThreadEffs s e a effs) ()
 runInstance event = do
     hks <- getHooks @s @e @a
-    -- FIXME: Log if hks == null (ie. the contract instance is done)
+    logDebug $ HandleInstanceRequests $ fmap (fmap JSON.toJSON) hks
+    when (null hks) $ logInfo Stopped
     unless (null hks) $ do
         case event of
             Just (EndpointCall vl) -> do
+                logInfo $ ReceiveEndpointCall vl
                 -- TODO:
                 -- check if the endpoint is active and (maybe - configurable) throw an error if it isn't
                 e <- case JSON.fromJSON @(Event s) vl of
-                        JSON.Error e'       -> throwError $ JSONDecodingError e'
+                        JSON.Error e'       -> do
+                            let msg = JSONDecodingError e'
+                            logError $ InstErr msg
+                            throwError msg
                         JSON.Success event' -> pure event'
 
-                void $ respondToRequest @s @e @a $ RequestHandler $ \h -> do
+                response <- respondToRequest @s @e @a $ RequestHandler $ \h -> do
                     guard $ handlerName h == eventName e
                     pure e
+                logResponse response
                 sleep @effs Low >>= runInstance
             _ -> do
                 -- FIXME: handleSlotNotifications configurable
-                responses <- respondToRequest @s @e @a handleBlockchainQueries
+                response <- respondToRequest @s @e @a handleBlockchainQueries
                 let prio =
                         maybe
                             -- If no events could be handled we go to sleep
@@ -173,7 +184,8 @@ runInstance event = do
                             -- a low priority, trying again after all other
                             -- active threads have had their turn
                             (const Low)
-                            responses
+                            response
+                logResponse response
                 sleep @effs prio >>= runInstance
 
 getHooks :: forall s e a effs. Member (State (ContractInstanceState s e a)) effs => Eff effs [Request (Handlers s)]
@@ -256,3 +268,17 @@ addEventInstanceState event s@ContractInstanceState{instContractState, instEvent
         events' = instEvents |> event
         history' = instHandlersHistory |> unRequests
     in s { instContractState = state', instEvents = events', instHandlersHistory = history'}
+
+---
+-- Logging
+---
+
+logResponse ::  forall s effs.
+    ( Member (LogMsg ContractInstanceMsg) effs
+    , ContractConstraints s
+    )
+    => Maybe (Response (Event s))
+    -> Eff effs ()
+logResponse = \case
+    Nothing -> logInfo NoRequestsHandled
+    Just rsp -> logInfo $ HandledRequest $ fmap JSON.toJSON rsp

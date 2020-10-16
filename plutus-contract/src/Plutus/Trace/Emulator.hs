@@ -51,7 +51,7 @@ import           Plutus.Trace.Scheduler                          (Priority (..),
 import           Wallet.API                                      (WalletAPIError, defaultSlotRange, payToPublicKey_)
 import qualified Wallet.Emulator                                 as EM
 import           Wallet.Emulator.Chain                           (ChainControlEffect, ChainEffect, getCurrentSlot)
-import           Wallet.Emulator.MultiAgent                      (EmulatorEvent, EmulatorEvent', EmulatorState,
+import           Wallet.Emulator.MultiAgent                      (EmulatorEvent, EmulatorEvent' (..), EmulatorState,
                                                                   EmulatorTimeEvent (..), MultiAgentEffect, emulatorLog,
                                                                   emulatorTimeEvent, schedulerEvent, walletAction,
                                                                   walletControlAction)
@@ -68,9 +68,23 @@ import           Plutus.Trace.Emulator.Types                     (ContractConstr
 import qualified Plutus.Trace.Emulator.Types                     as Types
 import           Plutus.Trace.Types
 
+
+data EmulatorConfig =
+    EmulatorConfig
+        { _InitialDistribution :: InitialDistribution
+        }
+
+defaultEmulatorConfig :: EmulatorConfig
+defaultEmulatorConfig =
+    EmulatorConfig
+        { _InitialDistribution = defaultDist
+        }
+
+makeLenses ''EmulatorConfig
+
 -- | Run a 'Trace Emulator', returning the final state and possibly an error
 runEmulatorTrace :: EmulatorConfig -> Eff '[Trace Emulator] () -> (Either EmulatorErr (), EM.EmulatorState)
-runEmulatorTrace conf = runTraceBackend conf . interpretEmulatorTrace
+runEmulatorTrace conf = runTraceBackend conf . interpretEmulatorTrace (conf ^. initialDistribution . to Map.keys)
 
 data EmulatorErr =
     WalletErr WalletAPIError
@@ -80,7 +94,7 @@ data EmulatorErr =
 
 runTraceBackend ::
     EmulatorConfig
-    -> Eff '[ LogMsg SchedulerLog
+    -> Eff '[ LogMsg EmulatorEvent'
             , MultiAgentEffect
             , ChainEffect
             , ChainControlEffect
@@ -98,10 +112,10 @@ runTraceBackend conf =
     . wrapError AssertionErr
     . wrapError InstanceErr
     . EM.processEmulated
-    . interpret (mapLog (review schedulerEvent))
+    . subsume
     . raiseEnd5
 
--- | Annotate the emulator log messages with the current system time
+-- | Annotate emulator log messages with the current system time
 --   (slot number)
 mkTimedLogs :: forall a effs.
     ( Member (LogMsg (EmulatorTimeEvent a)) effs
@@ -116,19 +130,8 @@ mkTimedLogs = mapMLog f where
             <$> gets (view $ EM.chainState . EM.currentSlot)
             <*> pure a
 
-data EmulatorConfig =
-    EmulatorConfig
-        { emcInitialDistribution :: InitialDistribution
-        }
-
-defaultEmulatorConfig :: EmulatorConfig
-defaultEmulatorConfig =
-    EmulatorConfig
-        { emcInitialDistribution = defaultDist
-        }
-
 initialState :: EmulatorConfig -> EM.EmulatorState
-initialState EmulatorConfig{emcInitialDistribution} = EM.emulatorStateInitialDist (Map.mapKeys EM.walletPubKey emcInitialDistribution)
+initialState EmulatorConfig{_InitialDistribution} = EM.emulatorStateInitialDist (Map.mapKeys EM.walletPubKey _InitialDistribution)
 
 -- | Interpret a 'Trace Emulator' action in the multi agent and emulated
 --   blockchain effects.
@@ -137,16 +140,18 @@ interpretEmulatorTrace :: forall effs.
     , Member (Error ContractInstanceError) effs
     , Member ChainEffect effs
     , Member ChainControlEffect effs
-    , Member (LogMsg SchedulerLog) effs
+    , Member (LogMsg EmulatorEvent') effs
     )
-    => Eff '[Trace Emulator] ()
+    => [Wallet] -- ^ Wallets that should be simulated in the emulator
+    -> Eff '[Trace Emulator] ()
     -> Eff effs ()
-interpretEmulatorTrace action =
+interpretEmulatorTrace wallets action =
     evalState @EmulatorThreads mempty
         $ handleDeterministicIds
+        $ interpret (mapLog (review schedulerEvent))
         $ runThreads
         $ do
-            launchSystemThreads
+            launchSystemThreads wallets
             interpret (handleTrace emInterpreter) $ raiseEnd action
 
 emInterpreter :: forall effs.
@@ -154,6 +159,7 @@ emInterpreter :: forall effs.
     , Member (State EmulatorThreads) effs
     , Member MultiAgentEffect effs
     , Member (Error ContractInstanceError) effs
+    , Member (LogMsg EmulatorEvent') effs
     )
     => TraceInterpreter Emulator effs EmulatorMessage
 emInterpreter = TraceInterpreter
@@ -166,6 +172,7 @@ emRunLocal :: forall b effs.
     , Member (State EmulatorThreads) effs
     , Member MultiAgentEffect effs
     , Member (Error ContractInstanceError) effs
+    , Member (LogMsg EmulatorEvent') effs
     )
     => Wallet
     -> EmulatorLocal b
@@ -199,6 +206,7 @@ activate :: forall s e effs.
     , Member (State EmulatorThreads) effs
     , Member MultiAgentEffect effs
     , Member (Error ContractInstanceError) effs
+    , Member (LogMsg EmulatorEvent') effs
     )
     => Wallet
     -> Contract s e ()
@@ -206,7 +214,7 @@ activate :: forall s e effs.
 activate wllt con = do
     i <- nextId
     let handle = ContractHandle{chContract=con, chInstanceId = i}
-    _ <- fork @effs @EmulatorMessage System High (runReader wllt $ contractThread handle)
+    _ <- fork @effs @EmulatorMessage System High (runReader wllt $ interpret (mapLog InstanceEvent) $ reinterpret (mapLog InstanceEvent) $ contractThread handle)
     pure handle
 
 callEndpoint :: forall s l e ep effs.

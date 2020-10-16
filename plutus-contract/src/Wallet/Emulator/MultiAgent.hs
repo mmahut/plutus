@@ -27,15 +27,18 @@ import           Control.Monad.Freer.Log     (LogLevel (..), LogMessage, LogMsg,
 import qualified Control.Monad.Freer.Log     as Log
 import           Control.Monad.Freer.State
 import           Data.Aeson                  (FromJSON, ToJSON)
+import qualified Data.Aeson                  as JSON
 import           Data.Map                    (Map)
 import qualified Data.Map                    as Map
 import qualified Data.Text                   as T
 import           Data.Text.Extras            (tshow)
 import           Data.Text.Prettyprint.Doc
 import           GHC.Generics                (Generic)
+
 import           Ledger                      hiding (to, value)
 import qualified Ledger.AddressMap           as AM
 import qualified Ledger.Index                as Index
+import           Plutus.Trace.Emulator.Types (ContractInstanceLog)
 import qualified Plutus.Trace.Scheduler      as Scheduler
 import qualified Wallet.API                  as WAPI
 import qualified Wallet.Effects              as Wallet
@@ -45,7 +48,7 @@ import           Wallet.Emulator.LogMessages (RequestHandlerLogMsg, TxBalanceMsg
 import qualified Wallet.Emulator.NodeClient  as NC
 import qualified Wallet.Emulator.Notify      as Notify
 import qualified Wallet.Emulator.Wallet      as Wallet
-import           Wallet.Types                (AssertionError (..))
+import           Wallet.Types                (AssertionError (..), ContractInstanceId)
 
 -- | Assertions which will be checked during execution of the emulator.
 data Assertion
@@ -79,6 +82,7 @@ data EmulatorEvent' =
     | ChainIndexEvent Wallet.Wallet ChainIndex.ChainIndexEvent
     | NotificationEvent Notify.EmulatorNotifyLogMsg
     | SchedulerEvent Scheduler.SchedulerLog
+    | InstanceEvent ContractInstanceLog
     deriving stock (Eq, Show, Generic)
     deriving anyclass (ToJSON, FromJSON)
 
@@ -309,10 +313,8 @@ handleMultiAgent = interpret $ \case
             & interpret (mapLog (review p4))
             & interpret (mapLog (review p7))
             & interpret (handleZoomedState (walletState wallet))
-            -- & reinterpret (handleWriterLog (const Info))
             & interpret (mapLog (review p1))
             & interpret (handleZoomedState (walletState wallet . Wallet.nodeClient))
-            -- & reinterpret (handleWriterLog (const Info))
             & interpret (mapLog (review p2))
             & interpret (handleZoomedState (walletState wallet . Wallet.chainIndex))
             & interpret (mapLog (review p3))
