@@ -25,6 +25,9 @@ import           Wallet.Emulator.ChainIndex    (chainIndexNotify)
 import           Wallet.Emulator.NodeClient    (ChainClientNotification (..), clientNotify)
 import           Wallet.Emulator.Wallet        (Wallet (..))
 
+-- | Start the system threads: One thread that makes blocks, and one thread
+--   for each agent (wallet) that keeps the agent's chain index, etc. up to
+--   date.
 launchSystemThreads :: forall effs.
     ( Member ChainControlEffect effs
     , Member MultiAgentEffect effs

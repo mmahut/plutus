@@ -33,6 +33,8 @@ module Plutus.Trace.Emulator.Types(
     , chainState
     -- * Logging
     , ContractInstanceLog(..)
+    , cilId
+    , cilMessage
     , ContractInstanceError(..)
     , ContractInstanceMsg(..)
     ) where
@@ -165,8 +167,10 @@ data ContractInstanceMsg =
 
 data ContractInstanceLog =
     ContractInstanceLog
-        { cilMessage :: ContractInstanceMsg
-        , cilId      :: ContractInstanceId
+        { _cilMessage :: ContractInstanceMsg
+        , _cilId      :: ContractInstanceId
         }
     deriving stock (Eq, Ord, Show, Generic)
     deriving anyclass (ToJSON, FromJSON)
+
+makeLenses ''ContractInstanceLog

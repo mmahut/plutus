@@ -115,6 +115,9 @@ notificationEvent = prism' NotificationEvent (\case { NotificationEvent e -> Jus
 schedulerEvent :: Prism' EmulatorEvent' Scheduler.SchedulerLog
 schedulerEvent = prism' SchedulerEvent (\case { SchedulerEvent e -> Just e; _ -> Nothing })
 
+instanceEvent :: Prism' EmulatorEvent' ContractInstanceLog
+instanceEvent = prism' InstanceEvent (\case { InstanceEvent e -> Just e; _ -> Nothing })
+
 type EmulatedWalletEffects =
         '[ Wallet.WalletEffect
          , Error WAPI.WalletAPIError
