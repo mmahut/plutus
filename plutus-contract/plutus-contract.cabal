@@ -72,6 +72,7 @@ library
         Wallet.Emulator.ChainIndex
         Wallet.Emulator.ChainIndex.Index
         Wallet.Emulator.Error
+        Wallet.Emulator.Folds
         Wallet.Emulator.LogMessages
         Wallet.Emulator.NodeClient
         Wallet.Emulator.Notify

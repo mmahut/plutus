@@ -36,6 +36,7 @@ module Plutus.Trace.Emulator(
     , initialDistribution
     , defaultEmulatorConfig
     , runEmulatorTrace
+    , runEmulatorStream
     -- * Interpreter
     , interpretEmulatorTrace
     , emInterpreter
@@ -62,7 +63,7 @@ import qualified Data.Map                                        as Map
 import           Data.Maybe                                      (fromMaybe)
 import           Data.Proxy                                      (Proxy)
 import           Data.Text.Prettyprint.Doc                       (Pretty (pretty))
-import           Language.Plutus.Contract                        (Contract, HasEndpoint)
+import           Language.Plutus.Contract                        (Contract, HasEndpoint, HasBlockchainActions)
 import qualified Language.Plutus.Contract.Effects.ExposeEndpoint as Endpoint
 import           Ledger.Slot                                     (Slot (..))
 import           Ledger.Value                                    (Value)
@@ -287,6 +288,7 @@ activate :: forall s e effs.
     , Member MultiAgentEffect effs
     , Member (Error ContractInstanceError) effs
     , Member (LogMsg EmulatorEvent') effs
+    , HasBlockchainActions s
     )
     => Wallet
     -> ContractInstanceTag

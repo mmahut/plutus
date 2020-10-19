@@ -17,6 +17,10 @@ module Plutus.Trace.Emulator.ContractInstance(
     contractThread
     , getThread
     , ContractInstanceError
+    -- * Instance state
+    , ContractInstanceState(..)
+    , emptyInstanceState
+    , addEventInstanceState
     ) where
 
 import           Control.Lens
@@ -35,7 +39,7 @@ import           Data.Foldable                                 (traverse_)
 import           Data.Sequence                                 (Seq)
 import qualified Data.Text                                     as T
 import           GHC.Generics                                  (Generic)
-import           Language.Plutus.Contract                      (Contract (..))
+import           Language.Plutus.Contract                      (Contract (..), HasBlockchainActions)
 import           Language.Plutus.Contract.Resumable            (Request (..), Requests (..), Response (..))
 import qualified Language.Plutus.Contract.Resumable            as State
 import           Language.Plutus.Contract.Schema               (Event (..), Handlers (..), eventName, handlerName)
@@ -91,6 +95,7 @@ contractThread :: forall s e effs.
     , Member MultiAgentEffect effs
     , Member (Error ContractInstanceError) effs
     , ContractConstraints s
+    , HasBlockchainActions s
     )
     => ContractHandle s e
     -> Eff (EmulatorAgentThreadEffs effs) ()
@@ -143,6 +148,7 @@ emptyInstanceState con@(Contract c) =
 runInstance :: forall s e a effs.
     ( Member MultiAgentEffect effs
     , ContractConstraints s
+    , HasBlockchainActions s
     , Member (Error ContractInstanceError) effs
     )
     => Maybe EmulatorMessage
@@ -175,7 +181,7 @@ runInstance event = do
                 let prio =
                         maybe
                             -- If no events could be handled we go to sleep
-                            -- with the lowest priority, awaking only after
+                            -- with the lowest priority, waking only after
                             -- some external event has happened, for example
                             -- when a new block was added.
                             Sleeping

@@ -53,6 +53,8 @@ data ChainIndexEvent =
     deriving stock (Eq, Show, Generic)
     deriving anyclass (FromJSON, ToJSON)
 
+makePrisms ''ChainIndexEvent
+
 instance Pretty ChainIndexEvent where
     pretty = \case
         AddressStartWatching addr  -> "StartWatching:" <+> pretty addr

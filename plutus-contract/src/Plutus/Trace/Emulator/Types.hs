@@ -36,8 +36,16 @@ module Plutus.Trace.Emulator.Types(
     , ContractInstanceLog(..)
     , cilId
     , cilMessage
+    , cilTag
     , ContractInstanceError(..)
     , ContractInstanceMsg(..)
+    , _Started
+    , _Stopped
+    , _ReceiveEndpointCall
+    , _NoRequestsHandled
+    , _HandledRequest
+    , _HandleInstanceRequests
+    , _InstErr
     ) where
 
 import           Control.Lens
@@ -50,6 +58,7 @@ import qualified Data.Aeson                         as JSON
 import           Data.Map                           (Map)
 import Data.String (IsString)
 import           Data.Proxy                         (Proxy (..))
+import           Data.Text.Prettyprint.Doc (Pretty)
 import qualified Data.Row.Internal                  as V
 import           GHC.Generics                       (Generic)
 import Data.Text (Text)
@@ -76,7 +85,6 @@ type ContractConstraints s =
     , V.Forall (Input s) JSON.ToJSON
     , V.Forall (Output s) JSON.FromJSON
     , V.Forall (Output s) JSON.ToJSON
-    , HasBlockchainActions s
     )
 
 data EmulatorMessage =
@@ -112,7 +120,7 @@ data ContractHandle s e =
         }
 
 data EmulatorLocal r where
-    ActivateContract :: ContractConstraints s => ContractInstanceTag -> Contract s e () -> EmulatorLocal (ContractHandle s e)
+    ActivateContract :: (ContractConstraints s, HasBlockchainActions s) => ContractInstanceTag -> Contract s e () -> EmulatorLocal (ContractHandle s e)
     CallEndpointEm :: forall l ep s e. (ContractConstraints s, HasEndpoint l ep s) => Proxy l -> ContractHandle s e -> ep -> EmulatorLocal ()
     PayToWallet :: Wallet -> Value -> EmulatorLocal ()
     SetSigningProcess :: SigningProcess -> EmulatorLocal ()
@@ -129,7 +137,7 @@ instance TraceBackend Emulator where
 
 type EmulatorTrace a = Eff '[Trace Emulator] a
 
-activateContract :: forall s e. ContractConstraints s => Wallet -> ContractInstanceTag -> Contract s e () -> EmulatorTrace (ContractHandle s e)
+activateContract :: forall s e. (HasBlockchainActions s, ContractConstraints s) => Wallet -> ContractInstanceTag -> Contract s e () -> EmulatorTrace (ContractHandle s e)
 activateContract wallet tag = send @(Trace Emulator) . RunLocal wallet . ActivateContract tag
 
 callEndpoint :: forall l ep s e. (ContractConstraints s, HasEndpoint l ep s) => Wallet -> ContractHandle s e -> ep -> EmulatorTrace ()
@@ -163,7 +171,7 @@ data ContractInstanceError =
 newtype ContractInstanceTag = ContractInstanceTag { unContractInstanceTag :: Text }
     deriving stock (Eq, Ord, Show, Generic)
     deriving anyclass (ToJSON, FromJSON)
-    deriving newtype IsString
+    deriving newtype (IsString, Pretty)
 
 data ContractInstanceMsg =
     Started
@@ -186,3 +194,4 @@ data ContractInstanceLog =
     deriving anyclass (ToJSON, FromJSON)
 
 makeLenses ''ContractInstanceLog
+makePrisms ''ContractInstanceMsg

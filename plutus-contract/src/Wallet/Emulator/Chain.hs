@@ -34,9 +34,9 @@ import qualified Ledger.Interval           as Interval
 
 -- | Events produced by the blockchain emulator.
 data ChainEvent =
-    TxnValidate TxId
+    TxnValidate Tx
     -- ^ A transaction has been validated and added to the blockchain.
-    | TxnValidationFail TxId Index.ValidationError
+    | TxnValidationFail Tx Index.ValidationError
     -- ^ A transaction failed  to validate.
     | SlotAdd Slot
     deriving stock (Eq, Show, Generic)
@@ -44,8 +44,8 @@ data ChainEvent =
 
 instance Pretty ChainEvent where
     pretty = \case
-        TxnValidate t -> "TxnValidate" <+> pretty t
-        TxnValidationFail t e -> "TxnValidationFail" <+> pretty t <> colon <+> pretty e
+        TxnValidate t -> "TxnValidate" <+> pretty (txId t)
+        TxnValidationFail t e -> "TxnValidationFail" <+> pretty (txId t) <> colon <+> pretty e
         SlotAdd sl -> "SlotAdd" <+> pretty sl
 
 -- | A pool of transactions which have yet to be validated.
@@ -149,8 +149,8 @@ canValidateNow slot tx = Interval.member slot (txValidRange tx)
 mkValidationEvent :: Tx -> Maybe Index.ValidationError -> ChainEvent
 mkValidationEvent t result =
     case result of
-        Nothing  -> TxnValidate (txId t)
-        Just err -> TxnValidationFail (txId t) err
+        Nothing  -> TxnValidate t
+        Just err -> TxnValidationFail t err
 
 -- | Validate a transaction in the current emulator state.
 validateEm :: S.MonadState Index.UtxoIndex m => Slot -> Tx -> m (Maybe Index.ValidationError)
