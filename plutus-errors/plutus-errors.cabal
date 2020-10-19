@@ -20,9 +20,12 @@ source-repository head
 
 library
   exposed-modules:
-      AllErrors,
-      TH.Bootstrap
-  other-modules:
+      TH.Bootstrap,
+      TH.Codes,
+      TH.Docs,
+      Errors,
+      Codes,
+      Docs
   hs-source-dirs:
       src
   build-depends:
