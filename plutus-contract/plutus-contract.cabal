@@ -131,7 +131,8 @@ library
         fingertree -any,
         uuid -any,
         aeson-pretty -any,
-        unordered-containers -any
+        unordered-containers -any,
+        foldl -any
 
     if !(impl(ghcjs) || os(ghcjs))
         exposed-modules:

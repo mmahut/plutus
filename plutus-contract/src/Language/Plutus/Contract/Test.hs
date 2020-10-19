@@ -104,7 +104,8 @@ import qualified Wallet.Emulator.NodeClient                      as EM
 
 import           Language.Plutus.Contract.Schema                 (Event (..), Handlers (..), Input, Output)
 import           Language.Plutus.Contract.Trace                  as X
-import           Plutus.Trace                                    (Emulator, Trace)
+import Plutus.Trace.Emulator (EmulatorConfig(..))
+import           Plutus.Trace                                    (Emulator, Trace, runEmulatorTrace, defaultEmulatorConfig)
 import           Plutus.Trace.Emulator                           (EmulatorErr)
 import           Wallet.Types                                    (ContractInstanceId)
 
@@ -140,16 +141,12 @@ checkPredicate
     -> TracePredicate
     -> Eff '[Trace Emulator] ()
     -> TestTree
-checkPredicate nm predicate action = undefined
-    -- HUnit.testCaseSteps nm $ \step ->
-        -- case runTrace con action of
-        --     (Left err, _) ->
-        --         HUnit.assertFailure $ "ContractTrace failed. " ++ show err
-        --     (Right ((), st), ms) -> do
-        --         let dt = ContractTraceResult ms st
-        --             (result, testOutputs) = runWriter $ unPredF predicate (defaultDist, dt)
-        --         unless result (step . Text.unpack $ renderTraceContext testOutputs st)
-        --         HUnit.assertBool nm result
+checkPredicate nm predicate action = HUnit.testCaseSteps nm $ \step -> do
+    let cfg = defaultEmulatorConfig
+        (a, b) = runEmulatorTrace cfg action
+        (result, testOutputs) = runWriter $ unPredF predicate (_initialDistribution cfg, either Just (const Nothing) a, b)
+    unless result (step . Text.unpack $ renderTraceContext testOutputs b)
+    HUnit.assertBool nm result
 
 renderTraceContext
     :: forall ann.

@@ -33,6 +33,7 @@ module Plutus.Trace.Emulator(
     , Wallet.signingProcess
     -- * Running traces
     , EmulatorConfig(..)
+    , initialDistribution
     , defaultEmulatorConfig
     , runEmulatorTrace
     -- * Interpreter
@@ -45,7 +46,7 @@ module Plutus.Trace.Emulator(
 import           Control.Lens
 import           Control.Monad                                   (void)
 import           Control.Monad.Freer
-import           Control.Monad.Freer.Coroutine                   (Yield)
+import           Control.Monad.Freer.Coroutine                   (Yield, yield, Status(..), runC)
 import           Control.Monad.Freer.Error                       (Error, runError)
 import           Control.Monad.Freer.Extras                      (raiseEnd, raiseEnd4, raiseEnd6, wrapError,
                                                                   writeIntoState)
@@ -55,6 +56,7 @@ import           Control.Monad.Freer.Reader                      (runReader)
 import           Control.Monad.Freer.State                       (State, evalState, gets, runState)
 import           Control.Monad.Freer.Writer                      (Writer, tell)
 import qualified Data.Aeson                                      as JSON
+import Data.Bifunctor (Bifunctor(..))
 import           Data.Foldable                                   (traverse_)
 import qualified Data.Map                                        as Map
 import           Data.Maybe                                      (fromMaybe)
@@ -91,13 +93,13 @@ import           Plutus.Trace.Types
 
 data EmulatorConfig =
     EmulatorConfig
-        { _InitialDistribution :: InitialDistribution
+        { _initialDistribution :: InitialDistribution
         }
 
 defaultEmulatorConfig :: EmulatorConfig
 defaultEmulatorConfig =
     EmulatorConfig
-        { _InitialDistribution = defaultDist
+        { _initialDistribution = defaultDist
         }
 
 makeLenses ''EmulatorConfig
@@ -105,6 +107,10 @@ makeLenses ''EmulatorConfig
 -- | Run a 'Trace Emulator', returning the final state and possibly an error
 runEmulatorTrace :: EmulatorConfig -> Eff '[Trace Emulator] a -> (Either EmulatorErr (), EM.EmulatorState)
 runEmulatorTrace conf = runTraceBackend conf . interpretEmulatorTrace (conf ^. initialDistribution . to Map.keys)
+
+-- | Run a 'Trace Emulator', streaming the log messages as they arrive
+runEmulatorStream :: EmulatorConfig -> Eff '[Trace Emulator] a -> Stream (Maybe EmulatorErr) (LogMessage EmulatorEvent)
+runEmulatorStream conf = runTraceStream conf . interpretEmulatorTrace (conf ^. initialDistribution . to Map.keys)
 
 data EmulatorErr =
     WalletErr WalletAPIError
@@ -137,6 +143,51 @@ runTraceBackend conf =
     . subsume @(State EmulatorState)
     . raiseEnd6
 
+newtype Stream a e = Stream { unStream :: (Either a (Stream a e, e)) }
+    deriving (Functor, Foldable, Traversable)
+
+instance Bifunctor Stream where
+    bimap l r = Stream . bimap l (bimap (bimap l r) r) . unStream
+
+handleLogCoroutine :: forall e effs.
+    Member (Yield (LogMessage e) ()) effs
+    => LogMsg e
+    ~> Eff effs
+handleLogCoroutine = \case LMessage m -> yield m id
+
+runStream :: forall e a.
+    Eff '[Yield e ()] a
+    -> Stream a e
+runStream = f . run . runC where
+    f = \case
+            Done a -> Stream $ Left a
+            Continue e cont -> Stream $ Right (f $ run $ cont (), e)
+
+runTraceStream :: 
+    EmulatorConfig
+    -> Eff '[ State EmulatorState
+            , LogMsg EmulatorEvent'
+            , MultiAgentEffect
+            , ChainEffect
+            , ChainControlEffect
+            , Error ContractInstanceError
+            ] ()
+    -> Stream (Maybe EmulatorErr) (LogMessage EmulatorEvent)
+runTraceStream conf = 
+    first (either Just (const Nothing))
+    . runStream
+    . evalState (initialState conf)
+    . interpret handleLogCoroutine
+    . reinterpret @_ @(LogMsg EmulatorEvent) (mkTimedLogs @EmulatorEvent')
+    . runError
+    . wrapError WalletErr
+    . wrapError AssertionErr
+    . wrapError InstanceErr
+    . EM.processEmulated
+    . subsume
+    . subsume @(State EmulatorState)
+    . raiseEnd6
+
 -- | Annotate emulator log messages with the current system time
 --   (slot number)
 mkTimedLogs :: forall a effs.
@@ -153,7 +204,7 @@ mkTimedLogs = mapMLog f where
             <*> pure a
 
 initialState :: EmulatorConfig -> EM.EmulatorState
-initialState EmulatorConfig{_InitialDistribution} = EM.emulatorStateInitialDist (Map.mapKeys EM.walletPubKey _InitialDistribution)
+initialState EmulatorConfig{_initialDistribution} = EM.emulatorStateInitialDist (Map.mapKeys EM.walletPubKey _initialDistribution)
 
 -- | Interpret a 'Trace Emulator' action in the multi agent and emulated
 --   blockchain effects.
@@ -272,7 +323,8 @@ runTest :: forall a.
     Eff '[Trace Emulator] a
     -> IO ()
 runTest action = do
-    let result = runEmulatorTrace defaultEmulatorConfig (Types.waitNSlots 1 >> action)
-    traverse_ (print . pretty) (filter (\LogMessage{_logLevel} -> _logLevel >= Info) $ (result ^. _2 . emulatorLog))
-    print $ fst result
-
+    let result = runEmulatorStream defaultEmulatorConfig (Types.waitNSlots 1 >> action)
+    let go (Stream e) = case e of
+            Left m -> print m
+            Right (s, a) -> print (pretty a) >> go s
+    go result
