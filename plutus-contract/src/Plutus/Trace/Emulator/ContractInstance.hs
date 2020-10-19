@@ -94,12 +94,12 @@ contractThread :: forall s e effs.
     )
     => ContractHandle s e
     -> Eff (EmulatorAgentThreadEffs effs) ()
-contractThread ContractHandle{chInstanceId, chContract} = do
+contractThread ContractHandle{chInstanceId, chContract, chInstanceTag} = do
     ask @ThreadId >>= registerInstance chInstanceId
     handleContractRuntime @effs
         $ runReader chInstanceId
         $ evalState (emptyInstanceState chContract)
-        $ interpret (mapLog (\m -> ContractInstanceLog m chInstanceId))
+        $ interpret (mapLog (\m -> ContractInstanceLog m chInstanceId chInstanceTag))
         $ do
             logInfo Started
             msg <- mkSysCall @effs @EmulatorMessage Low Suspend

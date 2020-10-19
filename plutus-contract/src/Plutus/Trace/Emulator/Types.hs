@@ -18,6 +18,7 @@ module Plutus.Trace.Emulator.Types(
     , EmulatorThreads(..)
     , instanceIdThreads
     , EmulatorAgentThreadEffs
+    , ContractInstanceTag(..)
     , ContractHandle(..)
     , Emulator
     , EmulatorLocal(..)
@@ -47,9 +48,11 @@ import           Control.Monad.Freer.Reader         (Reader)
 import           Data.Aeson                         (FromJSON, ToJSON)
 import qualified Data.Aeson                         as JSON
 import           Data.Map                           (Map)
+import Data.String (IsString)
 import           Data.Proxy                         (Proxy (..))
 import qualified Data.Row.Internal                  as V
 import           GHC.Generics                       (Generic)
+import Data.Text (Text)
 import           Language.Plutus.Contract           (Contract, HasBlockchainActions, HasEndpoint)
 import           Language.Plutus.Contract.Resumable (Request (..), Requests (..), Response (..))
 import           Language.Plutus.Contract.Schema    (Input, Output)
@@ -100,15 +103,16 @@ type EmulatorAgentThreadEffs effs =
 
 data Emulator
 
--- | A reference to an installed contract in the emulator.
+-- | A reference to a running contract in the emulator.
 data ContractHandle s e =
     ContractHandle
-        { chContract   :: Contract s e ()
-        , chInstanceId :: ContractInstanceId
+        { chContract    :: Contract s e ()
+        , chInstanceId  :: ContractInstanceId
+        , chInstanceTag :: ContractInstanceTag
         }
 
 data EmulatorLocal r where
-    ActivateContract :: ContractConstraints s => Contract s e () -> EmulatorLocal (ContractHandle s e)
+    ActivateContract :: ContractConstraints s => ContractInstanceTag -> Contract s e () -> EmulatorLocal (ContractHandle s e)
     CallEndpointEm :: forall l ep s e. (ContractConstraints s, HasEndpoint l ep s) => Proxy l -> ContractHandle s e -> ep -> EmulatorLocal ()
     PayToWallet :: Wallet -> Value -> EmulatorLocal ()
     SetSigningProcess :: SigningProcess -> EmulatorLocal ()
@@ -125,8 +129,8 @@ instance TraceBackend Emulator where
 
 type EmulatorTrace a = Eff '[Trace Emulator] a
 
-activateContract :: forall s e. ContractConstraints s => Wallet -> Contract s e () -> EmulatorTrace (ContractHandle s e)
-activateContract wallet = send @(Trace Emulator) . RunLocal wallet . ActivateContract
+activateContract :: forall s e. ContractConstraints s => Wallet -> ContractInstanceTag -> Contract s e () -> EmulatorTrace (ContractHandle s e)
+activateContract wallet tag = send @(Trace Emulator) . RunLocal wallet . ActivateContract tag
 
 callEndpoint :: forall l ep s e. (ContractConstraints s, HasEndpoint l ep s) => Wallet -> ContractHandle s e -> ep -> EmulatorTrace ()
 callEndpoint wallet hdl = send @(Trace Emulator) . RunLocal wallet . CallEndpointEm (Proxy @l) hdl
@@ -154,6 +158,13 @@ data ContractInstanceError =
     deriving stock (Eq, Ord, Show, Generic)
     deriving anyclass (ToJSON, FromJSON)
 
+-- | A user-defined tag for a contract instance. Used to find the instance's
+--   log messages in the emulator log.
+newtype ContractInstanceTag = ContractInstanceTag { unContractInstanceTag :: Text }
+    deriving stock (Eq, Ord, Show, Generic)
+    deriving anyclass (ToJSON, FromJSON)
+    deriving newtype IsString
+
 data ContractInstanceMsg =
     Started
     | Stopped
@@ -169,6 +180,7 @@ data ContractInstanceLog =
     ContractInstanceLog
         { _cilMessage :: ContractInstanceMsg
         , _cilId      :: ContractInstanceId
+        , _cilTag     :: ContractInstanceTag
         }
     deriving stock (Eq, Ord, Show, Generic)
     deriving anyclass (ToJSON, FromJSON)

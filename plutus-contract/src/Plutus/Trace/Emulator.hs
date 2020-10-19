@@ -86,7 +86,7 @@ import           Plutus.Trace.Emulator.ContractInstance          (ContractInstan
 import           Plutus.Trace.Emulator.System                    (launchSystemThreads)
 import           Plutus.Trace.Emulator.Types                     (ContractConstraints, ContractHandle (..), Emulator,
                                                                   EmulatorGlobal (..), EmulatorLocal (..),
-                                                                  EmulatorMessage (..), EmulatorThreads)
+                                                                  EmulatorMessage (..), EmulatorThreads, ContractInstanceTag)
 import qualified Plutus.Trace.Emulator.Types                     as Types
 import           Plutus.Trace.Types
 
@@ -143,6 +143,7 @@ runTraceBackend conf =
     . subsume @(State EmulatorState)
     . raiseEnd6
 
+-- | A stream of 'e's that may terminate with an 'a'
 newtype Stream a e = Stream { unStream :: (Either a (Stream a e, e)) }
     deriving (Functor, Foldable, Traversable)
 
@@ -163,6 +164,8 @@ runStream = f . run . runC where
             Done a -> Stream $ Left a
             Continue e cont -> Stream $ Right (f $ run $ cont (), e)
 
+-- | Turn an emulator trace into a potentially infinite 'Stream' of emulator
+--   log messages.
 runTraceStream :: 
     EmulatorConfig
     -> Eff '[ State EmulatorState
@@ -254,7 +257,7 @@ emRunLocal :: forall b effs.
     -> EmulatorLocal b
     -> Eff (Yield (SystemCall effs EmulatorMessage) (Maybe EmulatorMessage) ': effs) b
 emRunLocal wllt = \case
-    ActivateContract con -> activate wllt con
+    ActivateContract tag con -> activate wllt tag con
     CallEndpointEm p h v -> callEndpoint p h v
     PayToWallet target vl -> payToWallet wllt target vl
     SetSigningProcess sp -> setSigningProcess wllt sp
@@ -286,11 +289,12 @@ activate :: forall s e effs.
     , Member (LogMsg EmulatorEvent') effs
     )
     => Wallet
+    -> ContractInstanceTag
     -> Contract s e ()
     -> Eff (Yield (SystemCall effs EmulatorMessage) (Maybe EmulatorMessage) ': effs) (ContractHandle s e)
-activate wllt con = do
+activate wllt tag con = do
     i <- nextId
-    let handle = ContractHandle{chContract=con, chInstanceId = i}
+    let handle = ContractHandle{chContract=con, chInstanceId = i, chInstanceTag = tag}
     _ <- fork @effs @EmulatorMessage System High (runReader wllt $ interpret (mapLog InstanceEvent) $ reinterpret (mapLog InstanceEvent) $ contractThread handle)
     pure handle
 
