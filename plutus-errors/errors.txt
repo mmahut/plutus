@@ -1,0 +1,268 @@
+Language.PlutusIR.Error,MalformedDataConstrResType,ann,PLC.Type
+Language.PlutusIR.Error,PLC.TypeError
+Language.PlutusIR.Error,CompilationError,ann,Text
+Language.PlutusIR.Error,UnsupportedError,ann,Text
+Language.PlutusIR.Parser,UnexpectedKeyword,String
+Language.PlutusIR.Parser,InternalError,String
+Language.PlutusCore.Error,LexErr,String
+Language.PlutusCore.Error,Unexpected,Token
+Language.PlutusCore.Error,UnknownBuiltinType,ann,Text
+Language.PlutusCore.Error,UnknownBuiltinFunction,ann,Text
+Language.PlutusCore.Error,InvalidBuiltinConstant,ann,Text,Text
+Language.PlutusCore.Error,MultiplyDefined,Unique,ann,ann
+Language.PlutusCore.Error,IncoherentUsage,Unique,ann,ann
+Language.PlutusCore.Error,FreeVariable,Unique,ann
+Language.PlutusCore.Error,BadType,ann,Type,Text
+Language.PlutusCore.Error,BadTerm,ann,Term,Text
+Language.PlutusCore.Error,KindMismatch,ann,Type,Kind,Kind
+Language.PlutusCore.Error,TypeMismatch,ann,term,Type,NormType
+Language.PlutusCore.Error,UnknownDynamicBuiltinNameErrorE,Text
+Language.PlutusCore.Error,OpenTypeOfBuiltin,Type,BuiltinName
+Language.PlutusCore.Error,FreeTypeVariableE,ann,TyName
+Language.PlutusCore.Error,FreeVariableE,ann,Name
+Language.PlutusCore.DeBruijn.Internal,FreeUnique,Unique
+Language.PlutusCore.DeBruijn.Internal,FreeIndex,Index
+Language.PlutusCore.Evaluation.Machine.Exception,NonPolymorphicInstantiationMachineError
+Language.PlutusCore.Evaluation.Machine.Exception,NonWrapUnwrappedMachineError
+Language.PlutusCore.Evaluation.Machine.Exception,NonFunctionalApplicationMachineError
+Language.PlutusCore.Evaluation.Machine.Exception,OpenTermEvaluatedMachineError
+Language.PlutusCore.Evaluation.Machine.Exception,TooFewArgumentsConstAppError,BuiltinName
+Language.PlutusCore.Evaluation.Machine.Exception,TooManyArgumentsConstAppError,BuiltinName,[Term]
+Language.PlutusCore.Evaluation.Machine.Exception,UnliftingErrorE Text
+Language.PlutusCore.Evaluation.Machine.Exception,ConstAppMachineError (ConstAppError term)
+Language.PlutusCore.Evaluation.Machine.Exception,BuiltinTermArgumentExpectedMachineError
+Language.PlutusCore.Evaluation.Machine.Exception,UnexpectedBuiltinTermArgumentMachineError
+Language.PlutusCore.Evaluation.Machine.Exception,EmptyBuiltinArityMachineError
+Language.PlutusCore.Evaluation.Machine.Exception,OtherMachineError,(UnknownDynamicBuiltinNameErrorE dynName)
+Language.PlutusCore.Evaluation.Machine.Cek,CekOutOfExError,ExRestrictingBudget,ExBudget
+Language.PlutusCore.Evaluation.Machine.Cek,CekEvaluationFailure
+Language.UntypedPlutusCore.Evaluation.Machine.Cek,CekOutOfExError,ExRestrictingBudget,ExBudget
+Language.UntypedPlutusCore.Evaluation.Machine.Cek,CekEvaluationFailure (error has been called or builtin failed app failed at runtime)
+Language.PlutusTx.Code,ImpossibleDeserialisationFailure,Codec.Serialise.DeserialiseFailure
+Language.PlutusTx.Lift.Class,Prelude.error $ "Unknown local variable: " ++ show name
+Language.PlutusTx.Lift.Class,Prelude.error $ "Constructors not created for " ++ show tyName
+Language.PlutusTx.Lift.Class,dieTH "Newtypes must have a single constructor with a single argument"
+Language.PlutusTx.Lift.Class,dieTH $ "Unsupported kind: " ++ show k
+Language.PlutusTx.Lift.Class,dieTH $ "Unsupported type: " ++ show t
+Language.PlutusTx.Utils,mustbeReplaced,GHC.Exception.ErrorCall -- for "plutustx" user-error-builtin run by ghc
+Builtins.error, the open user-error builtin run by the evaluator
+other errors,warnings from ghc-to-core (not controllable)
+Language.PlutusTx.Lift.Class,other errors,warnings from ghc-th (not controllable)
+Language.PlutusTx.Plugin,CompilationError,Text
+Language.PlutusTx.Plugin,UnsupportedError,Text
+Language.PlutusTx.Plugin,FreeVariableError,Text
+Language.PlutusTx.Plugin,failCompilation $ "Unable to get Core name needed for the plugin to function: " ++ show name
+Language.PlutusTx.Plugin,failCompilationSDoc "Found invalid marker, not applied correctly" (GHC.ppr e)
+Language.PlutusTx.Plugin,the plugin above errors also can be deffered to runtime, wrapped in failcomilation
+Language.PlutusTx.Plugin.Expr,UnsupportedError "Literal float"
+Language.PlutusTx.Plugin.Expr,UnsupportedError "Literal double"
+Language.PlutusTx.Plugin.Expr,UnsupportedError "Literal label"
+Language.PlutusTx.Plugin.Expr,UnsupportedError "Literal null"
+Language.PlutusTx.Plugin.Expr,UnsupportedError "Literal rubbish"
+Language.PlutusTx.Plugin.Expr,UnsupportedError "Literal case"
+Language.PlutusTx.Plugin.Expr,CompilationError "Data constructor not in the type constructor's list of constructors"
+Language.PlutusTx.Plugin.Expr,CompilationError "No info for String builtin"
+Language.PlutusTx.Plugin.Expr,UnsupportedError "Use of == from the Haskell Eq typeclass"
+Language.PlutusTx.Plugin.Expr,UnsupportedError "Use of Haskell Integer equality, possibly via the Haskell Eq typeclass"
+Language.PlutusTx.Plugin.Expr,UnsupportedError "Use of Haskell ByteString equality, possibly via the Haskell Eq typeclass"
+Language.PlutusTx.Plugin.Expr,CompilationError $ "Id not in class method list:" GHC.<+> GHC.ppr n
+Language.PlutusTx.Plugin.Expr,FreeVariableError $   "Variable" GHC.<+> GHC.ppr n       GHC.$+$ (GHC.ppr $ GHC.idDetails n)  GHC.$+$ (GHC.ppr $ GHC.realIdUnfolding n)
+Language.PlutusTx.Plugin.Expr,UnsupportedError $ "Cannot case on a value of type:" GHC.<+> GHC.ppr scrutineeType
+Language.PlutusTx.Plugin.Expr,UnsupportedError "Types as standalone expressions"
+Language.PlutusTx.Plugin.Expr,UnsupportedError "Coercions as expressions"
+Language.PlutusTx.Plugin.Primitives,UnsupportedError $ "Primitive operation:" GHC.<+> GHC.ppr po
+Language.PlutusTx.Plugin.Type,FreeVariableError $ "Type variable:" GHC.<+> GHC.ppr v
+Language.PlutusTx.Plugin.Type,UnsupportedError $ "Type" GHC.<+> GHC.ppr t
+Language.PlutusTx.Plugin.Type,UnsupportedError "Int: use Integer instead"
+Language.PlutusTx.Plugin.Type,UnsupportedError "Int#: unboxed integers are not supported"
+Language.PlutusTx.Plugin.Type,UnsupportedError $ "Recursive newtypes, use data:" GHC.<+> GHC.ppr tcName
+Language.PlutusTx.Plugin.Type,UnsupportedError $ "Abstract type:" GHC.<+> GHC.ppr tc
+Language.PlutusTx.Plugin.Type,UnsupportedError $ "Irreducible type family application:" GHC.<+> GHC.ppr tc
+Language.PlutusTx.Plugin.Type,UnsupportedError $ "Type constructor:" GHC.<+> GHC.ppr tc
+Language.PlutusTx.Plugin.Type,UnsupportedError $ "Cannot construct a value of type:" GHC.<+> GHC.ppr tc GHC.$+$ ghcStrictnessNote
+Language.PlutusTx.Plugin.Type,UnsupportedError $ "Cannot construct a value of type:" GHC.<+> GHC.ppr tc GHC.$+$ ghcStrictnessNote
+Language.PlutusTx.Plugin.Type,CompilationError $ "Cannot construct a value of a type which is not a datatype:" GHC.<+> GHC.ppr t
+Language.PlutusTx.Plugin.Type,UnsupportedError $ "Cannot case on a value on type:" GHC.<+> GHC.ppr tc GHC.$+$ ghcStrictnessNote
+Language.PlutusTx.Plugin.Type,CompilationError $ "Cannot case on a value of a type which is not a datatype:" GHC.<+> GHC.ppr t
+Language.PlutusTx.Plugin.Kind,UnsupportedError $ "Kind:" GHC.<+> GHC.ppr k
+Language.PlutusTx.Plugin.Builtins,CompilationError $ "Missing builtin name:" GHC.<+> (GHC.text $ show name)
+Language.PlutusTx.Plugin.Builtins,CompilationError $ "Missing builtin definition:" GHC.<+> (GHC.text $ show name)
+-- | An error we can get while trying to type an existing transaction part.
+src/Ledger/Typed/Tx.hs
+data ConnectionError =
+    WrongValidatorAddress Address Address
+    | WrongOutType TxOutType
+    | WrongInType TxInType
+    | WrongValidatorType String
+    | WrongRedeemerType
+    | WrongDatumType
+    | NoDatum TxId DatumHash
+    | UnknownRef
+   
+src/Ledger/Scripts.hs,Haskell.error "Debruijn failed"
+
+src/Ledger/Scripts.hs
+data ScriptError =
+    EvaluationError [Haskell.String] -- ^ Expected behavior of the engine (e.g. user-provided error)
+    | EvaluationException Haskell.String -- ^ Unexpected behavior of the engine (a bug)
+    | MalformedScript Haskell.String -- ^ Script is wrong in some way
+
+src/Ledger/Oracle.hs
+data SignedMessageCheckError =
+    SignatureMismatch Signature PubKey DatumHash
+    -- ^ The signature did not match the public key
+    | DatumMissing DatumHash
+    -- ^ The datum was missing from the pending transaction
+    | DecodingError
+    -- ^ The datum had the wrong shape
+    | DatumNotEqualToExpected
+    -- ^ The datum that correponds to the hash is wrong
+
+
+src/Ledger/Index.hs
+-- | A reason why a transaction is invalid.
+data ValidationError =
+    InOutTypeMismatch TxIn TxOut
+    -- ^ A pay-to-pubkey output was consumed by a pay-to-script input or vice versa, or the 'TxIn' refers to a different public key than the 'TxOut'.
+    | TxOutRefNotFound TxOutRef
+    -- ^ The transaction output consumed by a transaction input could not be found (either because it was already spent, or because
+    -- there was no transaction with the given hash on the blockchain).
+    | InvalidScriptHash Validator ValidatorHash
+    -- ^ For pay-to-script outputs: the validator script provided in the transaction input does not match the hash specified in the transaction output.
+    | InvalidDatumHash Datum DatumHash
+    -- ^ For pay-to-script outputs: the datum provided in the transaction input does not match the hash specified in the transaction output.
+    | InvalidSignature PubKey Signature
+    -- ^ For pay-to-pubkey outputs: the signature of the transaction input does not match the public key of the transaction output.
+    | ValueNotPreserved V.Value V.Value
+    -- ^ The amount spent by the transaction differs from the amount consumed by it.
+    | NegativeValue Tx
+    -- ^ The transaction produces an output with a negative value.
+    | NonAdaFees Tx
+    -- ^ The fee is not denominated entirely in Ada.
+    | ScriptFailure ScriptError
+    -- ^ For pay-to-script outputs: evaluation of the validator script failed.
+    | CurrentSlotOutOfRange Slot.Slot
+    -- ^ The current slot is not covered by the transaction's validity slot range.
+    | SignatureMissing PubKeyHash
+    -- ^ The transaction is missing a signature
+    | ForgeWithoutScript Scripts.MonetaryPolicyHash
+    -- ^ The transaction attempts to forge value of a currency without running
+    --   the currency's monetary policy.
+    | TransactionFeeTooLow V.Value V.Value
+    -- ^ The transaction fee is lower than the minimum acceptable fee.
+
+
+src/Ledger/Crypto.hs
+throwCryptoError $ ED25519.verify <$> k' <*> pure (getTxId txId) <*> s' -- TODO: is this what we want
+throwCryptoError $ fmap convert (ED25519.sign <$> k <*> pure salt <*> pk <*> pure msg)
+throwCryptoError . ED25519.secretKey
+
+
+src/Ledger/Constraints/OffChain.hs
+data MkTxError =
+    TypeCheckFailed ConnectionError
+    | TxOutRefNotFound TxOutRef
+    | TxOutRefWrongType TxOutRef
+    | DatumNotFound DatumHash
+    | MonetaryPolicyNotFound MonetaryPolicyHash
+    | ValidatorHashNotFound Address
+    | OwnPubKeyMissing
+    | ScriptInstanceMissing
+    | DatumWrongHash DatumHash Datum
+
+
+src/Wallet/Rollup/Render.hs"Could not find referenced PubKeyHash: " <> Text.pack (show pkh)
+
+src/Wallet/Types.hs
+
+GenericAssertion
+WrongVariantError
+
+data ContractError =
+    WalletError WalletAPIError
+    | EmulatorAssertionError AssertionError -- TODO: Why do we need this constructor
+    | OtherError T.Text
+    | ConstraintResolutionError MkTxError
+    | ResumableError MatchingError
+    | CCheckpointError CheckpointError
+
+
+data NotificationError =
+    EndpointNotAvailable ContractInstanceId EndpointDescription
+    | MoreThanOneEndpointAvailable ContractInstanceId EndpointDescription
+    | InstanceDoesNotExist ContractInstanceId
+    | OtherNotificationError ContractError
+    | NotificationJSONDecodeError EndpointDescription Aeson.Value String -- ^ Indicates that the target contract does not have the expected schema
+
+
+src/Language/Plutus/Contract/StateMachine.hs
+data SMContractError s i =
+    InvalidTransition s i
+    | NonZeroValueAllocatedInFinalState
+    | ChooserError Text
+    | SMCContractError ContractError
+
+src/Language/Plutus/Contract/Checkpoint.hs
+data CheckpointError = JSONDecodeError Text
+
+
+src/Language/Plutus/Contract/Effects/RPC.hs
+data RPCCallError =
+    RPCCallError NotificationError
+    | RPCOtherError ContractError
+    | RPCAwaitResponseError ContractError
+
+data RPCRespondError =
+    RPCEndpointError ContractError
+    | RPCNotifyError NotificationError
+
+src/Wallet/Emulator/Error.hs
+data WalletAPIError =
+    InsufficientFunds Text
+    -- ^ There were insufficient funds to perform the desired operation.
+    | PrivateKeyNotFound PubKeyHash
+    -- ^ The private key of this public key hahs is not known to the wallet.
+    | OtherError Text
+    -- ^ Some other error occurred.
+
+src/Language/Plutus/Contract/Trace.hs
+data TraceError e =
+    TraceAssertionError EM.AssertionError
+    | TContractError e
+    | HandleBlockchainEventsMaxIterationsExceeded Wallet MaxIterations
+    | HookError EndpointError
+
+data EndpointError =
+    EndpointNotActive (Maybe Wallet) EndpointDescription
+    | MoreThanOneEndpointActive EndpointDescription
+
+src/Cardano/Metadata/Types.hs
+data MetadataError
+    = SubjectNotFound Subject
+    | PropertyNotFound Subject PropertyKey
+
+
+src/Plutus/SCB/Types.hs
+data SCBError
+    = FileNotFound FilePath
+    | ContractNotFound FilePath
+    | ContractInstanceNotFound ContractInstanceId
+    | SCBContractError ContractError
+    | WalletClientError ClientError
+    | NodeClientError ClientError
+    | MetadataClientError ClientError
+    | MetadataError Metadata.MetadataError
+    | SigningProcessError ClientError
+    | ChainIndexError ClientError
+    | WalletError WalletAPIError
+    | ContractCommandError Int Text
+    | InvalidUUIDError  Text
+    | OtherError Text
+    | EndpointCallError ContractInstanceId EndpointError
+
+src/Plutus/SCB/Webserver/Types.hs ErrorResponse Text
+
+
+Servant ServerError
+Servant ClientError
+

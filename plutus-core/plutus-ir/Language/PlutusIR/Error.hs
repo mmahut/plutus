@@ -29,7 +29,7 @@ import           Control.Lens
 
 import qualified Data.Text                  as T
 import           Data.Text.Prettyprint.Doc  as PP
-
+import PlutusError
 
 data TypeErrorExt uni ann =
       MalformedDataConstrResType
@@ -39,6 +39,9 @@ data TypeErrorExt uni ann =
     deriving (Show, Eq, Generic, NFData)
 makeClassyPrisms ''TypeErrorExt
 
+instance ErrorCode (Language.PlutusIR.Error.TypeErrorExt _a2_acYY _a1_acYX) where
+  errorCode Language.PlutusIR.Error.MalformedDataConstrResType {} = 1
+
 
 data Error uni a = CompilationError a T.Text -- ^ A generic compilation error.
                  | UnsupportedError a T.Text -- ^ An error relating specifically to an unsupported feature.
@@ -47,6 +50,13 @@ data Error uni a = CompilationError a T.Text -- ^ A generic compilation error.
                  | PIRTypeError (TypeErrorExt uni a)
                deriving (Typeable)
 makeClassyPrisms ''Error
+
+instance ErrorCode (Language.PlutusIR.Error.Error _a2_acYW _a1_acYV) where
+   errorCode Language.PlutusIR.Error.UnsupportedError {} = 3
+   errorCode Language.PlutusIR.Error.CompilationError {} = 2
+   errorCode (PIRTypeError e) = errorCode e
+   errorCode (PLCTypeError e) = errorCode e
+   errorCode _ = 0 -- FIXME: use underlying error
 
 instance PLC.AsTypeError (Error uni a) (PIR.Term PIR.TyName PIR.Name uni ()) uni a where
     _TypeError = _PLCTypeError
@@ -81,7 +91,7 @@ instance
 
 instance (PLC.GShow uni, PLC.Closed uni, uni `PLC.Everywhere` PLC.PrettyConst, Pretty ann) =>
             PrettyBy PLC.PrettyConfigPlc (Error uni ann) where
-     prettyBy config = \case
+     prettyBy config er = PP.pretty (errorCode er) <> ":" <> case er of
         CompilationError x e -> "Error during compilation:" <+> PP.pretty e <> "(" <> PP.pretty x <> ")"
         UnsupportedError x e -> "Unsupported construct:" <+> PP.pretty e <+> "(" <> PP.pretty x <> ")"
         PLCError e -> PP.vsep [ "Error from the PLC compiler:", PLC.prettyBy config e ]

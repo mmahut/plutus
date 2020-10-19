@@ -26,6 +26,7 @@ module Language.UntypedPlutusCore.Evaluation.Machine.Cek
     , EvaluationResult(..)
     , ErrorWithCause(..)
     , EvaluationError(..)
+    , CekUserError(..)
     , ExBudget(..)
     , ExBudgetCategory(..)
     , ExBudgetMode(..)

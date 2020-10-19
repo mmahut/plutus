@@ -42,7 +42,7 @@ import           Control.Monad.Except
 import qualified Data.Text                          as T
 import           Data.Text.Prettyprint.Doc
 import           Data.Text.Prettyprint.Doc.Internal (Doc (Text))
-
+import PlutusError
 {- Note [Annotations and equality]
 Equality of two errors DOES DEPEND on their annotations.
 So feel free to use @deriving Eq@ for errors.
@@ -98,11 +98,19 @@ newtype UnknownDynamicBuiltinNameError
     deriving newtype (NFData)
 makeClassyPrisms ''UnknownDynamicBuiltinNameError
 
+instance ErrorCode Language.PlutusCore.Error.UnknownDynamicBuiltinNameError where
+  errorCode
+    Language.PlutusCore.Error.UnknownDynamicBuiltinNameErrorE {}
+    = 17
+
 -- | An internal error occurred during type checking.
 data InternalTypeError uni ann
     = OpenTypeOfBuiltin (Type TyName uni ()) BuiltinName
     deriving (Show, Eq, Generic, NFData, Functor)
 makeClassyPrisms ''InternalTypeError
+
+instance ErrorCode (Language.PlutusCore.Error.InternalTypeError _a2_acYI _a1_acYH) where
+  errorCode Language.PlutusCore.Error.OpenTypeOfBuiltin {} = 18
 
 data TypeError term uni ann
     = KindMismatch ann (Type TyName uni ()) (Kind ())  (Kind ())
@@ -116,6 +124,14 @@ data TypeError term uni ann
     | FreeVariableE ann Name
     deriving (Show, Eq, Generic, NFData, Functor)
 makeClassyPrisms ''TypeError
+
+instance ErrorCode (Language.PlutusCore.Error.TypeError _a3_acYQ _a2_acYP _a1_acYO) where
+    errorCode Language.PlutusCore.Error.FreeVariableE {} = 20
+    errorCode Language.PlutusCore.Error.FreeTypeVariableE {} = 19
+    errorCode Language.PlutusCore.Error.TypeMismatch {} = 16
+    errorCode Language.PlutusCore.Error.KindMismatch {} = 15
+    errorCode (UnknownDynamicBuiltinName _ e) = errorCode e
+    errorCode (InternalTypeErrorE _ e) = errorCode e
 
 data Error uni ann
     = ParseErrorE (ParseError ann)
@@ -186,7 +202,8 @@ instance GShow uni => PrettyBy PrettyConfigPlc (InternalTypeError uni ann) where
 
 instance (GShow uni, Closed uni, uni `Everywhere` PrettyConst,  Pretty ann, Pretty term) =>
             PrettyBy PrettyConfigPlc (TypeError term uni ann) where
-    prettyBy config (KindMismatch ann ty k k')          =
+    prettyBy config e@(KindMismatch ann ty k k')          =
+        pretty (errorCode e) <> ":" <>
         "Kind mismatch at" <+> pretty ann <+>
         "in type" <+> squotes (prettyBy config ty) <>
         ". Expected kind" <+> squotes (prettyBy config k) <+>
