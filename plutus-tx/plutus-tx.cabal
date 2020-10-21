@@ -85,6 +85,7 @@ library
         cborg -any,
         serialise -any,
         plutus-core -any,
+        plutus-common -any,
         lens -any,
         ghc-prim -any,
         aeson -any

@@ -72,7 +72,6 @@ instance Pretty ann => Show (ParseError ann)
     where
       show = show . pretty
 
-
 data UniqueError ann
     = MultiplyDefined Unique ann ann
     | IncoherentUsage Unique ann ann
@@ -98,10 +97,6 @@ newtype UnknownDynamicBuiltinNameError
     deriving newtype (NFData)
 makeClassyPrisms ''UnknownDynamicBuiltinNameError
 
-instance ErrorCode Language.PlutusCore.Error.UnknownDynamicBuiltinNameError where
-  errorCode
-    Language.PlutusCore.Error.UnknownDynamicBuiltinNameErrorE {}
-    = 17
 
 -- | An internal error occurred during type checking.
 data InternalTypeError uni ann
@@ -109,8 +104,6 @@ data InternalTypeError uni ann
     deriving (Show, Eq, Generic, NFData, Functor)
 makeClassyPrisms ''InternalTypeError
 
-instance ErrorCode (Language.PlutusCore.Error.InternalTypeError _a2_acYI _a1_acYH) where
-  errorCode Language.PlutusCore.Error.OpenTypeOfBuiltin {} = 18
 
 data TypeError term uni ann
     = KindMismatch ann (Type TyName uni ()) (Kind ())  (Kind ())
@@ -125,13 +118,6 @@ data TypeError term uni ann
     deriving (Show, Eq, Generic, NFData, Functor)
 makeClassyPrisms ''TypeError
 
-instance ErrorCode (Language.PlutusCore.Error.TypeError _a3_acYQ _a2_acYP _a1_acYO) where
-    errorCode Language.PlutusCore.Error.FreeVariableE {} = 20
-    errorCode Language.PlutusCore.Error.FreeTypeVariableE {} = 19
-    errorCode Language.PlutusCore.Error.TypeMismatch {} = 16
-    errorCode Language.PlutusCore.Error.KindMismatch {} = 15
-    errorCode (UnknownDynamicBuiltinName _ e) = errorCode e
-    errorCode (InternalTypeErrorE _ e) = errorCode e
 
 data Error uni ann
     = ParseErrorE (ParseError ann)
@@ -236,3 +222,41 @@ instance (GShow uni, Closed uni, uni `Everywhere` PrettyConst, Pretty ann) =>
     prettyBy _      (UniqueCoherencyErrorE e) = pretty e
     prettyBy config (TypeErrorE e)            = prettyBy config e
     prettyBy config (NormCheckErrorE e)       = prettyBy config e
+
+
+instance ErrorCode (Language.PlutusCore.Error.ParseError _a1_acYN) where
+    errorCode Language.PlutusCore.Error.InvalidBuiltinConstant {} = 10
+    errorCode Language.PlutusCore.Error.UnknownBuiltinFunction {} = 9
+    errorCode Language.PlutusCore.Error.UnknownBuiltinType {} = 8
+    errorCode Language.PlutusCore.Error.Unexpected {} = 7
+    errorCode Language.PlutusCore.Error.LexErr {} = 6
+
+instance ErrorCode (Language.PlutusCore.Error.UniqueError _a1_acYR) where
+      errorCode Language.PlutusCore.Error.FreeVariable {} = 21
+      errorCode Language.PlutusCore.Error.IncoherentUsage {} = 12
+      errorCode Language.PlutusCore.Error.MultiplyDefined {} = 11
+
+instance ErrorCode (Language.PlutusCore.Error.NormCheckError _a4_acYM _a3_acYL _a2_acYK _a1_acYJ) where
+      errorCode Language.PlutusCore.Error.BadTerm {} = 14
+      errorCode Language.PlutusCore.Error.BadType {} = 13
+
+instance ErrorCode Language.PlutusCore.Error.UnknownDynamicBuiltinNameError where
+    errorCode  Language.PlutusCore.Error.UnknownDynamicBuiltinNameErrorE {}  = 17
+
+instance ErrorCode (Language.PlutusCore.Error.InternalTypeError _a2_acYI _a1_acYH) where
+  errorCode Language.PlutusCore.Error.OpenTypeOfBuiltin {} = 18
+
+instance ErrorCode (Language.PlutusCore.Error.TypeError _a3_acYQ _a2_acYP _a1_acYO) where
+    errorCode Language.PlutusCore.Error.FreeVariableE {} = 20
+    errorCode Language.PlutusCore.Error.FreeTypeVariableE {} = 19
+    errorCode Language.PlutusCore.Error.TypeMismatch {} = 16
+    errorCode Language.PlutusCore.Error.KindMismatch {} = 15
+    errorCode (UnknownDynamicBuiltinName _ e) = errorCode e
+    errorCode (InternalTypeErrorE _ e) = errorCode e
+
+instance ErrorCode (Language.PlutusCore.Error.Error _a3_acYQ _a2_acYP) where
+    errorCode (ParseErrorE e) = errorCode e
+    errorCode (UniqueCoherencyErrorE e) = errorCode e
+    errorCode (TypeErrorE e) = errorCode e
+    errorCode (NormCheckErrorE e) = errorCode e
+

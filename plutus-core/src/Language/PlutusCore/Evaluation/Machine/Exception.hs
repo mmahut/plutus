@@ -43,6 +43,7 @@ import           Control.Monad.Except
 import           Data.String                                     (IsString)
 import           Data.Text                                       (Text)
 import           Data.Text.Prettyprint.Doc
+import PlutusError
 
 -- | When unlifting of a PLC term into a Haskell value fails, this error is thrown.
 newtype UnliftingError
@@ -61,6 +62,7 @@ data ConstAppError term
     | UnliftingConstAppError UnliftingError
       -- ^ Could not construct denotation for a builtin.
     deriving (Show, Eq, Functor)
+
 
 -- | Errors which can occur during a run of an abstract machine.
 data MachineError err term
@@ -84,6 +86,8 @@ data MachineError err term
       -- See the machine implementations for details.
     | OtherMachineError err
     deriving (Show, Eq, Functor)
+
+
 
 -- | The type of errors (all of them) which can occur during evaluation
 -- (some are used-caused, some are internal).
@@ -231,3 +235,55 @@ instance (PrettyPlc term, PrettyPlc err) =>
 
 instance (PrettyPlc term, PrettyPlc err, Typeable term, Typeable err) =>
             Exception (ErrorWithCause err term)
+
+
+instance ErrorCode Language.PlutusCore.Evaluation.Machine.Exception.UnliftingError where
+      errorCode
+        Language.PlutusCore.Evaluation.Machine.Exception.UnliftingErrorE {}
+        = 30
+
+instance ErrorCode (Language.PlutusCore.Evaluation.Machine.Exception.ConstAppError _a1_acYS) where
+      errorCode
+        Language.PlutusCore.Evaluation.Machine.Exception.TooManyArgumentsConstAppError {}
+        = 29
+      errorCode
+        Language.PlutusCore.Evaluation.Machine.Exception.TooFewArgumentsConstAppError {}
+        = 28
+      errorCode (UnliftingConstAppError e) = errorCode e
+
+instance ErrorCode err => ErrorCode (Language.PlutusCore.Evaluation.Machine.Exception.MachineError err _a1_acYT) where
+      errorCode
+        Language.PlutusCore.Evaluation.Machine.Exception.EmptyBuiltinArityMachineError {}
+        = 34
+      errorCode
+        Language.PlutusCore.Evaluation.Machine.Exception.UnexpectedBuiltinTermArgumentMachineError {}
+        = 33
+      errorCode
+        Language.PlutusCore.Evaluation.Machine.Exception.BuiltinTermArgumentExpectedMachineError {}
+        = 32
+      errorCode
+        Language.PlutusCore.Evaluation.Machine.Exception.OpenTermEvaluatedMachineError {}
+        = 27
+      errorCode
+        Language.PlutusCore.Evaluation.Machine.Exception.NonFunctionalApplicationMachineError {}
+        = 26
+      errorCode
+        Language.PlutusCore.Evaluation.Machine.Exception.NonWrapUnwrappedMachineError {}
+        = 25
+      errorCode
+        Language.PlutusCore.Evaluation.Machine.Exception.NonPolymorphicInstantiationMachineError {}
+        = 24
+      errorCode
+        (Language.PlutusCore.Evaluation.Machine.Exception.ConstAppMachineError e)
+        = errorCode e
+      errorCode
+        (Language.PlutusCore.Evaluation.Machine.Exception.OtherMachineError e)
+        = errorCode e
+
+instance (ErrorCode other, ErrorCode user) => ErrorCode (EvaluationError other user t_) where
+  errorCode (InternalEvaluationError e) = errorCode e
+  errorCode (UserEvaluationError e) = errorCode e
+
+
+instance ErrorCode err => ErrorCode (ErrorWithCause err t) where
+    errorCode (ErrorWithCause e _) = errorCode e

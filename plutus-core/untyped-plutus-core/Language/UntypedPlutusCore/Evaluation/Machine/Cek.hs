@@ -71,6 +71,7 @@ import           Data.Hashable
 import           Data.HashMap.Monoidal
 import qualified Data.Map                                           as Map
 import           Data.Text.Prettyprint.Doc
+import PlutusError
 
 {- Note [Scoping]
    The CEK machine does not rely on the global uniqueness condition, so the renamer pass is not a
@@ -121,6 +122,15 @@ data CekUserError
     = CekOutOfExError ExRestrictingBudget ExBudget
     | CekEvaluationFailure -- ^ Error has been called or a builtin application has failed
     deriving (Show, Eq)
+
+-- FIXME: should this be the same errorcodes as the typed-plutus-core.CekUserError original datatype?
+instance ErrorCode Language.UntypedPlutusCore.Evaluation.Machine.Cek.CekUserError where
+      errorCode
+        Language.UntypedPlutusCore.Evaluation.Machine.Cek.CekEvaluationFailure {}
+        = 39
+      errorCode
+        Language.UntypedPlutusCore.Evaluation.Machine.Cek.CekOutOfExError {}
+        = 38
 
 {- Note [Being generic over @term@ in 'CekM']
 We have a @term@-generic version of 'CekM' called 'CekCarryingM', which itself requires a

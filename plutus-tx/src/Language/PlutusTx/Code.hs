@@ -21,6 +21,7 @@ import           Control.Exception
 
 import qualified Data.ByteString                  as BS
 import qualified Data.ByteString.Lazy             as BSL
+import PlutusError
 
 -- NOTE: any changes to this type must be paralleled by changes
 -- in the plugin code that generates values of this type. That is
@@ -56,6 +57,11 @@ newtype ImpossibleDeserialisationFailure = ImpossibleDeserialisationFailure Dese
 instance Show ImpossibleDeserialisationFailure where
     show (ImpossibleDeserialisationFailure e) = "Failed to deserialise our own program! This is a bug, please report it. Caused by: " ++ show e
 instance Exception ImpossibleDeserialisationFailure
+
+instance ErrorCode Language.PlutusTx.Code.ImpossibleDeserialisationFailure where
+      errorCode
+        Language.PlutusTx.Code.ImpossibleDeserialisationFailure {}
+        = 40
 
 -- | Get the actual Plutus Core program out of a 'CompiledCode'.
 getPlc

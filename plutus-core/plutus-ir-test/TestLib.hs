@@ -6,6 +6,7 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators          #-}
+{-# LANGUAGE TypeApplications          #-}
 module TestLib where
 
 import           Common
@@ -92,12 +93,12 @@ ppCatch value = render <$> (either (pretty . show) prettyPlcClassicDebug <$> run
 goldenPlcFromPir :: ToTPlc a PLC.DefaultUni => Parser a -> String -> TestNested
 goldenPlcFromPir = goldenPirM (\ast -> ppThrow $ do
                                 p <- toTPlc ast
-                                withExceptT toException $ PLC.deBruijnProgram p)
+                                asIfThrown $ PLC.deBruijnProgram p)
 
 goldenPlcFromPirCatch :: ToTPlc a PLC.DefaultUni => Parser a -> String -> TestNested
 goldenPlcFromPirCatch = goldenPirM (\ast -> ppCatch $ do
                                            p <- toTPlc ast
-                                           withExceptT toException $ PLC.deBruijnProgram p)
+                                           asIfThrown $ PLC.deBruijnProgram p)
 
 goldenEvalPir :: (ToUPlc a PLC.DefaultUni) => Parser a -> String -> TestNested
 goldenEvalPir = goldenPirM (\ast -> ppThrow $ runUPlc [ast])
@@ -105,12 +106,12 @@ goldenEvalPir = goldenPirM (\ast -> ppThrow $ runUPlc [ast])
 goldenTypeFromPir :: forall a. (Pretty a, Typeable a)
                   => Parser (Term TyName Name PLC.DefaultUni a) -> String -> TestNested
 goldenTypeFromPir = goldenPirM (\ast -> ppThrow $
-                                withExceptT (toException :: PIR.Error PLC.DefaultUni a -> SomeException) $ runQuoteT $ inferType defConfig ast)
+                                asIfThrown @(PIR.Error PLC.DefaultUni a) $ runQuoteT $ inferType defConfig ast)
 
 goldenTypeFromPirCatch :: forall a. (Pretty a, Typeable a)
                   => Parser (Term TyName Name PLC.DefaultUni a) -> String -> TestNested
 goldenTypeFromPirCatch = goldenPirM (\ast -> ppCatch $
-                                withExceptT (toException :: PIR.Error PLC.DefaultUni a -> SomeException) $ runQuoteT $ inferType defConfig ast)
+                                asIfThrown @(PIR.Error PLC.DefaultUni a) $ runQuoteT $ inferType defConfig ast)
 
 -- TODO: perhaps move to Common.hs
 instance Pretty SourcePos where

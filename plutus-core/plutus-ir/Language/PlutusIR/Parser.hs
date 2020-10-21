@@ -42,7 +42,7 @@ import           Data.Word
 import qualified Control.Monad.Combinators.NonEmpty as NE
 import           Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer         as Lex
-
+import PlutusError
 
 
 
@@ -52,6 +52,10 @@ newtype ParserState = ParserState { identifiers :: M.Map T.Text PLC.Unique }
 data ParseError = UnexpectedKeyword String
                 | InternalError String
                 deriving (Eq, Ord, Show)
+
+instance ErrorCode Language.PlutusIR.Parser.ParseError where
+      errorCode Language.PlutusIR.Parser.InternalError {} = 5
+      errorCode Language.PlutusIR.Parser.UnexpectedKeyword {} = 4
 
 type Error = Parsec.ParseError Char ParseError
 

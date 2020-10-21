@@ -46,6 +46,7 @@ import           Numeric.Natural
 
 import           Control.DeepSeq            (NFData)
 import           GHC.Generics
+import PlutusError
 
 -- | A relative index used for de Bruijn identifiers.
 newtype Index = Index Natural
@@ -163,6 +164,10 @@ data FreeVariableError
     | FreeIndex Index
     deriving (Show, Typeable, Eq, Ord)
 instance Exception FreeVariableError
+
+instance ErrorCode Language.PlutusCore.DeBruijn.Internal.FreeVariableError where
+    errorCode  Language.PlutusCore.DeBruijn.Internal.FreeIndex {}  = 23
+    errorCode  Language.PlutusCore.DeBruijn.Internal.FreeUnique {}  = 22
 
 -- | Get the 'Index' corresponding to a given 'Unique'.
 getIndex :: (MonadReader Levels m, MonadError FreeVariableError m) => Unique -> m Index
