@@ -25,6 +25,7 @@ import qualified Ledger.Ada                                    as Ada
 import qualified Ledger.Constraints                            as Constraints
 import qualified Ledger.Crypto                                 as Crypto
 import           Prelude                                       hiding (not)
+import Plutus.Trace.Emulator (callEndpoint)
 import qualified Wallet.Emulator                               as EM
 
 import qualified Language.Plutus.Contract.Effects.AwaitSlot    as AwaitSlot
@@ -54,10 +55,10 @@ tests =
             (waitingForSlot w1 10)
             $ pure ()
 
-        , cp "both (2)"
-            (void $ Con.both (awaitSlot 10) (awaitSlot 20))
-            (waitingForSlot w1 20)
-            $ void $ respondToRequest w1 (maybeToHandler $ \_ -> Just $ AwaitSlot.event 10)
+        -- , cp "both (2)"
+        --     (void $ Con.both (awaitSlot 10) (awaitSlot 20))
+        --     (waitingForSlot w1 20)
+            -- $ void $ respondToRequest w1 (maybeToHandler $ \_ -> Just $ AwaitSlot.event 10)
 
         , cp "fundsAtAddressGt"
             (void $ fundsAtAddressGt someAddress (Ada.adaValueOf 10))

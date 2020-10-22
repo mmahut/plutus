@@ -116,6 +116,13 @@ instance BoundedMeetSemiLattice TracePredicate where
 not :: TracePredicate -> TracePredicate
 not = fmap Prelude.not
 
+-- | Options for running the 
+data CheckOptions =
+    CheckOptions
+        { coMinLogLevel :: LogLevel -- ^ Minimum log level for emulator log messages to be included in the test output (printed if the test fails)
+        , coMaxSlots :: Natural -- ^ When to stop the emulator
+        }
+
 checkPredicate
     :: forall s e a
     . ( Show e
@@ -125,14 +132,15 @@ checkPredicate
       , Forall (Input s) JSON.FromJSON
       , Forall (Output s) Unconstrained1
       )
-    => String
+    => CheckOptions
+    -> String
     -> TracePredicate
     -> Eff '[Trace Emulator] ()
     -> TestTree
-checkPredicate nm predicate action = HUnit.testCaseSteps nm $ \step -> do
+checkPredicate CheckOptions{coMinLogLevel, coMaxSlots} nm predicate action = HUnit.testCaseSteps nm $ \step -> do
     let cfg = defaultEmulatorConfig
         dist = _initialDistribution cfg
-        theStream = runEmulatorStream cfg action
+        theStream = runEmulatorStream (Just coMaxSlots) cfg action
     result <- runM
                 $ reinterpret @(Writer (Doc Void)) @IO  (\case { Tell d -> sendM $ step $ Text.unpack $ renderStrict $ layoutPretty defaultLayoutOptions d })
                 $ runError
