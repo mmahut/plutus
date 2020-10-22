@@ -1,3 +1,5 @@
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE DefaultSignatures     #-}
 {-# LANGUAGE FlexibleContexts      #-}
@@ -10,7 +12,15 @@
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE ViewPatterns          #-}
-module Language.PlutusTx.Lift.Class (Typeable (..),  Lift (..), RTCompile, makeTypeable, makeLift, withTyVars)where
+module Language.PlutusTx.Lift.Class
+    ( Typeable (..)
+    , Lift (..)
+    , RTCompile
+    , makeTypeable
+    , makeLift
+    , withTyVars
+    , LiftError (..)
+    ) where
 
 import           Language.PlutusTx.Lift.THUtils
 
@@ -25,6 +35,7 @@ import qualified Language.PlutusCore.Universe           as PLC
 
 import           Control.Monad.Reader                   hiding (lift)
 import           Control.Monad.State                    hiding (lift)
+import Control.Monad.Except hiding (lift)
 import qualified Control.Monad.Trans                    as Trans
 
 import qualified Language.Haskell.TH                    as TH
@@ -40,6 +51,10 @@ import           Data.Maybe
 import           Data.Proxy
 import qualified Data.Text                              as T
 import           Data.Traversable
+import qualified Data.Text.Prettyprint.Doc              as PP
+import PlutusError
+import qualified Control.Exception as Prelude (throw, Exception)
+import qualified Data.Typeable as Prelude
 
 -- Apparently this is how you're supposed to fail at TH time.
 dieTH :: MonadFail m => String -> m a
@@ -74,7 +89,33 @@ inline all the definitions so that the overall expression can have the right con
 
 type RTCompile uni = DefT TH.Name uni () Quote
 type RTCompileScope uni = ReaderT (LocalVars uni) (RTCompile uni)
-type THCompile = StateT Deps (ReaderT THLocalVars TH.Q)
+type THCompile = StateT Deps (ReaderT THLocalVars (ExceptT LiftError TH.Q))
+
+data LiftError = UnsupportedLiftKind TH.Kind
+               | UnsupportedLiftType TH.Type
+               | UserLiftError T.Text
+               | LiftMissingDataCons TH.Name
+               | LiftMissingVar TH.Name
+               deriving stock Prelude.Typeable -- for Control.Exception
+
+instance Prelude.Exception LiftError
+
+instance PP.Pretty LiftError where
+    pretty (UnsupportedLiftType t) = "Unsupported lift type: " PP.<+> PP.viaShow t
+    pretty (UnsupportedLiftKind t) = "Unsupported lift kind: " PP.<+> PP.viaShow t
+    pretty (UserLiftError t) = PP.pretty t
+    pretty (LiftMissingDataCons n) = "Constructors not created for type: " PP.<+> PP.viaShow n
+    pretty (LiftMissingVar n) = "Unknown local variable: " PP.<+> PP.viaShow n
+
+instance Show LiftError where
+    show = show . PP.pretty -- for Control.Exception
+
+instance ErrorCode LiftError where
+    errorCode UnsupportedLiftType {} = 44
+    errorCode UnsupportedLiftKind {} = 45
+    errorCode UserLiftError {} = 46
+    errorCode LiftMissingDataCons {} = 47
+    errorCode LiftMissingVar {} = 48
 
 {- Note [Type variables]
 We handle types in almost exactly the same way when we are constructing Typeable
@@ -177,7 +218,7 @@ isClosedConstraint = null . TH.freeVariables
 
 -- | Convenience wrapper around 'normalizeType' and 'TH.resolveTypeSynonyms'.
 normalizeAndResolve :: TH.Type -> THCompile TH.Type
-normalizeAndResolve ty = normalizeType <$> (Trans.lift $ Trans.lift $ TH.resolveTypeSynonyms ty)
+normalizeAndResolve ty = normalizeType <$> (Trans.lift $ Trans.lift $ Trans.lift $ TH.resolveTypeSynonyms ty)
 
 -- See Note [Ordering of constructors]
 sortedCons :: TH.DatatypeInfo -> [TH.ConstructorInfo]
@@ -203,7 +244,7 @@ compileKind :: TH.Kind -> THCompile (Kind ())
 compileKind = \case
     TH.StarT -> pure $ Type ()
     TH.AppT (TH.AppT TH.ArrowT k1) k2 -> KindArrow () <$> compileKind k1 <*> compileKind k2
-    k -> dieTH $ "Unsupported kind: " ++ show k
+    k -> throwError $ UnsupportedLiftKind k
 
 compileType :: TH.Type -> THCompile (TH.TExpQ (RTCompileScope PLC.DefaultUni (Type TyName PLC.DefaultUni ())))
 compileType = \case
@@ -221,11 +262,10 @@ compileType = \case
                   vars <- ask
                   case Map.lookup name vars of
                       Just ty -> pure ty
-                      -- TODO: better runtime failures
-                      Nothing -> Prelude.error $ "Unknown local variable: " ++ show name
+                      Nothing -> Prelude.throw $ LiftMissingVar name
              ||]
         else compileTypeableType t name
-    t -> dieTH $ "Unsupported type: " ++ show t
+    t -> throwError $ UnsupportedLiftType t
 
 -- | Compile a type with the given name using 'typeRep' and incurring a corresponding 'Typeable' dependency.
 compileTypeableType :: TH.Type -> TH.Name -> THCompile (TH.TExpQ (RTCompileScope PLC.DefaultUni (Type TyName PLC.DefaultUni ())))
@@ -281,7 +321,7 @@ compileTypeRep dt@TH.DatatypeInfo{TH.datatypeName=tyName, TH.datatypeVars=tvs} =
         -- Extract the unique field of the unique constructor
         argTy <- case cons of
             [ TH.ConstructorInfo {TH.constructorFields=[argTy]} ] -> (compileType <=< normalizeAndResolve) argTy
-            _ -> dieTH "Newtypes must have a single constructor with a single argument"
+            _ -> throwError $ UserLiftError "Newtypes must have a single constructor with a single argument"
         deps <- gets getTyConDeps
         pure [||
             let
@@ -300,7 +340,7 @@ compileTypeRep dt@TH.DatatypeInfo{TH.datatypeName=tyName, TH.datatypeVars=tvs} =
                             defineType tyName (PLC.Def dtvd alias) deps
                             recordAlias' tyName
                             pure alias
-            in flip runReaderT mempty act
+            in runReaderT act mempty
          ||]
     else do
         constrExprs <- traverse compileConstructorDecl cons
@@ -337,7 +377,7 @@ compileTypeRep dt@TH.DatatypeInfo{TH.datatypeName=tyName, TH.datatypeVars=tvs} =
 
                             defineDatatype tyName (PLC.Def dtvd datatype) deps
                         pure $ mkTyVar () dtvd
-          in flip runReaderT mempty act
+          in runReaderT act mempty
           ||]
 
 compileConstructorDecl
@@ -362,7 +402,7 @@ makeTypeable uni name = do
     requireExtension TH.ScopedTypeVariables
 
     info <- TH.reifyDatatype name
-    (rhs, deps) <- flip runReaderT mempty $ flip runStateT mempty $ (compileTypeRep info)
+    (rhs, deps) <- runTHCompile $ compileTypeRep info
 
     -- See Note [Closed constraints]
     let constraints = filter (not . isClosedConstraint) $ toConstraint uni <$> Set.toList deps
@@ -408,6 +448,7 @@ compileConstructorClause dt@TH.DatatypeInfo{TH.datatypeName=tyName, TH.datatypeV
         rhsExpr <- if isNewtype dt
             then case liftExprs of
                     [argExpr] -> pure argExpr
+                    -- TODO: switch to throwError $ Userlifterror
                     _         -> dieTH "Newtypes must have a single constructor with a single argument"
             else
                 pure [||
@@ -431,8 +472,7 @@ compileConstructorClause dt@TH.DatatypeInfo{TH.datatypeName=tyName, TH.datatypeV
                         -- get the right constructor
                         maybeConstructors <- lookupConstructors () tyName
                         constrs <- case maybeConstructors of
-                            -- TODO: better runtime failures
-                            Nothing -> Prelude.error $ "Constructors not created for " ++ show tyName
+                            Nothing -> Prelude.throw $ LiftMissingDataCons tyName
                             Just cs -> pure cs
                         let constr = constrs !! index
 
@@ -455,10 +495,7 @@ makeLift name = do
 
     let datatypeType = TH.datatypeType info
 
-    (clauses, deps) <-
-        flip runReaderT mempty $
-        flip runStateT mempty $
-        (compileLift info)
+    (clauses, deps) <- runTHCompile $ compileLift info
 
     {-
     Here we *do* need to add some constraints, because we're going to generate things like
@@ -479,3 +516,14 @@ makeLift name = do
     decl <- TH.funD 'lift clauses
     let liftDecs = [TH.InstanceD Nothing constraints (liftPir uni datatypeType) [decl]]
     pure $ typeableDecs ++ liftDecs
+
+
+-- | In case of exception, it will call `fail` in TemplateHaskell
+runTHCompile :: THCompile a -> TH.Q (a, Deps)
+runTHCompile m = do
+    res <- runExceptT $
+          flip runReaderT mempty $
+          runStateT m mempty
+    case res of
+        Left a -> fail $ "Generating Lift instances: " ++ show (PP.pretty a)
+        Right b -> pure b

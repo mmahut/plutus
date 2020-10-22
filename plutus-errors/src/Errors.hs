@@ -27,50 +27,48 @@ data DeprecatedErrors =
     -- append here your deprecated errors
 
 instance ErrorCode DeprecatedErrors where
-    errorCode ReservedErrorCode = 0
+    errorCode ReservedErrorCode {} = 0
 
 errors :: [Name]
 errors =
    [ 'PIR.MalformedDataConstrResType
-   -- , 'PIR.CompilationError
-   -- , 'PIR.UnsupportedError
-   -- , 'PIR.UnexpectedKeyword
-   --  , 'PIR.InternalError
-   --  , 'PLC.LexErr
-   --  , 'PLC.Unexpected
-   --  , 'PLC.UnknownBuiltinType
-   --  , 'PLC.UnknownBuiltinFunction
-   --  , 'PLC.InvalidBuiltinConstant
-   --  , 'PLC.MultiplyDefined
-   --  , 'PLC.IncoherentUsage
-   --  , 'PLC.BadType
-   --  , 'PLC.BadTerm
+   , 'PIR.CompilationError
+   , 'PIR.UnsupportedError
+   , 'PIR.UnexpectedKeyword
+    , 'PIR.InternalError
+    , 'PLC.LexErr
+    , 'PLC.Unexpected
+    , 'PLC.UnknownBuiltinType
+    , 'PLC.UnknownBuiltinFunction
+    , 'PLC.InvalidBuiltinConstant
+    , 'PLC.MultiplyDefined
+    , 'PLC.IncoherentUsage
+    , 'PLC.BadType
+    , 'PLC.BadTerm
     , 'PLC.KindMismatch
     , 'PLC.TypeMismatch
-    -- , 'PLC.UnknownDynamicBuiltinNameErrorE
-    -- , 'PLC.OpenTypeOfBuiltin
-    -- , 'PLC.FreeTypeVariableE
-    -- , 'PLC.FreeVariableE
-    -- , 'PLC.FreeVariable
-    -- , 'PLC.FreeUnique
-    -- , 'PLC.FreeIndex
-    -- , 'PLC.NonPolymorphicInstantiationMachineError
-    -- , 'PLC.NonWrapUnwrappedMachineError
-    -- , 'PLC.NonFunctionalApplicationMachineError
-    -- , 'PLC.OpenTermEvaluatedMachineError
-    -- , 'PLC.TooFewArgumentsConstAppError
-    -- , 'PLC.TooManyArgumentsConstAppError
-    -- , 'PLC.UnliftingErrorE
-    -- , 'PLC.ConstAppMachineError
-    -- , 'PLC.BuiltinTermArgumentExpectedMachineError
-    -- , 'PLC.UnexpectedBuiltinTermArgumentMachineError
-    -- , 'PLC.EmptyBuiltinArityMachineError
-    -- , 'PLC.OtherMachineError
-    -- , 'PLC.CekOutOfExError
-    -- , 'PLC.CekEvaluationFailure
-    -- , 'PLCU.CekOutOfExError
-    -- , 'PLCU.CekEvaluationFailure
-    -- , 'PTX.ImpossibleDeserialisationFailure
+    , 'PLC.UnknownDynamicBuiltinNameErrorE
+    , 'PLC.OpenTypeOfBuiltin
+    , 'PLC.FreeTypeVariableE
+    , 'PLC.FreeVariableE
+    , 'PLC.FreeVariable
+    , 'PLC.FreeUnique
+    , 'PLC.FreeIndex
+    , 'PLC.NonPolymorphicInstantiationMachineError
+    , 'PLC.NonWrapUnwrappedMachineError
+    , 'PLC.NonFunctionalApplicationMachineError
+    , 'PLC.OpenTermEvaluatedMachineError
+    , 'PLC.TooFewArgumentsConstAppError
+    , 'PLC.TooManyArgumentsConstAppError
+    , 'PLC.UnliftingErrorE
+    , 'PLC.BuiltinTermArgumentExpectedMachineError
+    , 'PLC.UnexpectedBuiltinTermArgumentMachineError
+    , 'PLC.EmptyBuiltinArityMachineError
+    , 'PLC.CekOutOfExError
+    , 'PLC.CekEvaluationFailure
+    , 'PLCU.CekOutOfExError
+    , 'PLCU.CekEvaluationFailure
+    , 'PTX.ImpossibleDeserialisationFailure
     -- -- Language.PlutusTx.Lift.Class,Prelude.error $ "Unknown local variable: " ++ show name
     -- -- Language.PlutusTx.Lift.Class,Prelude.error $ "Constructors not created for " ++ show tyName
     -- -- Language.PlutusTx.Lift.Class,dieTH "Newtypes must have a single constructor with a single argument"
@@ -78,9 +76,16 @@ errors =
     -- -- Language.PlutusTx.Lift.Class,dieTH $ "Unsupported kind: " ++ show k
     -- -- Language.PlutusTx.Lift.Class,dieTH $ "Unsupported type: " ++ show t
     -- -- Language.PlutusTx.Utils,mustbeReplaced,GHC.Exception.ErrorCall -- for "plutustx" user-error-builtin run by ghc
-    -- , 'PTX.CompilationError
-    -- , 'PTX.UnsupportedError
-    -- , 'PTX.FreeVariableError
+    , 'PTX.CompilationError
+    , 'PTX.UnsupportedError
+    , 'PTX.FreeVariableError
+    , 'PTX.UnsupportedLiftType
+    , 'PTX.UnsupportedLiftKind
+    , 'PTX.UserLiftError
+    , 'PTX.LiftMissingDataCons
+    , 'PTX.LiftMissingVar
     -- -- Language.PlutusTx.Plugin,failCompilation $ "Unable to get Core name needed for the plugin to function: " ++ show name
-    -- , 'ReservedErrorCode
+    , 'ReservedErrorCode
+    --, 'PLC.OtherMachineError -- we don't need this one, it is a wrapper
+    -- , 'PLC.ConstAppMachineError -- we don't need this one, it is a wrapper
     ]
