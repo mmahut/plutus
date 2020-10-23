@@ -29,7 +29,7 @@ import           Control.Monad.Except
 import qualified Data.Text                         as T
 import qualified Data.Text.Prettyprint.Doc         as PP
 import           Data.Typeable
-import PlutusError
+import Language.Plutus.Common
 
 -- | An error with some (nested) context. The integer argument to 'WithContextC' represents
 -- the priority of the context when displaying it. Lower numbers are more prioritised.

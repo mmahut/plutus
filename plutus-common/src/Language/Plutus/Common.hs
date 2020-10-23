@@ -1,4 +1,4 @@
-module PlutusError
+module Language.Plutus.Common
     ( ErrorCode(..)
     ) where
 

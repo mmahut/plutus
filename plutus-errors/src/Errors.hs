@@ -2,7 +2,7 @@
 module Errors (errors) where
 
 import Language.Haskell.TH
-import PlutusError
+import Language.Plutus.Common
 
 import qualified Language.PlutusIR.Error as PIR
 import qualified Language.PlutusIR.Parser as PIR

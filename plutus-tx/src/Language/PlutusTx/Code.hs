@@ -21,7 +21,7 @@ import           Control.Exception
 
 import qualified Data.ByteString                  as BS
 import qualified Data.ByteString.Lazy             as BSL
-import PlutusError
+import Language.Plutus.Common
 
 -- NOTE: any changes to this type must be paralleled by changes
 -- in the plugin code that generates values of this type. That is

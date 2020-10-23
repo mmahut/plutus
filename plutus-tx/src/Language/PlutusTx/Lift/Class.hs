@@ -52,7 +52,7 @@ import           Data.Proxy
 import qualified Data.Text                              as T
 import           Data.Traversable
 import qualified Data.Text.Prettyprint.Doc              as PP
-import PlutusError
+import Language.Plutus.Common
 import qualified Control.Exception as Prelude (throw, Exception)
 import qualified Data.Typeable as Prelude
 
