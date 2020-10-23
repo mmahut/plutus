@@ -20,7 +20,14 @@ import qualified Language.PlutusTx.Compiler.Type as PTX
 import qualified Language.PlutusTx.Compiler.Kind as PTX
 import qualified Language.PlutusTx.Compiler.Builtins as PTX
 
--- | A collection of error instances and their codes that are deprecated
+{- | A collection of error instances and their codes that are deprecated.
+
+When an error is deprecated (does not trigger anymore) and (some of) its dataconstructors has been removed,
+and in case the error is "exposed" to the public, then it is required that its "deprecated" constructors
+be "moved" and listed/errorCoded under the umbrella datatype `plutus-errors:Errors.DeprecatedErrors`.
+
+See NOTE [Error Codes of plutus errors]
+-}
 {-# DEPRECATED DeprecatedErrors "These errors and their error codes *should* not be thrown by any plutus code anymore" #-}
 data DeprecatedErrors =
     ReservedErrorCode
@@ -29,6 +36,9 @@ data DeprecatedErrors =
 instance ErrorCode DeprecatedErrors where
     errorCode ReservedErrorCode {} = 0
 
+-- | All errors among the whole project categorized. This includes both existing and deprecated errors.
+--
+-- Note: order of adding to this list does not matter at the moment.
 errors :: [Name]
 errors =
    [ 'PIR.MalformedDataConstrResType
