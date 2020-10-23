@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE DataKinds           #-}
@@ -58,15 +59,18 @@ import qualified Data.Aeson                         as JSON
 import           Data.Map                           (Map)
 import Data.String (IsString)
 import           Data.Proxy                         (Proxy (..))
-import           Data.Text.Prettyprint.Doc (Pretty)
+import           Data.Text.Prettyprint.Doc (Pretty(..), (<+>), colon, braces, viaShow, fillSep)
 import qualified Data.Row.Internal                  as V
 import           GHC.Generics                       (Generic)
 import Data.Text (Text)
 import           Language.Plutus.Contract           (Contract, HasBlockchainActions, HasEndpoint)
-import           Language.Plutus.Contract.Resumable (Request (..), Requests (..), Response (..))
+import           Language.Plutus.Contract.Resumable (Request (..), Response (..))
 import           Language.Plutus.Contract.Schema    (Input, Output)
+import Ledger.Interval (Interval)
+import qualified Ledger.Interval as I
 import           Ledger.Slot                        (Slot (..))
 import           Ledger.Tx                          (Tx)
+import Ledger.TxId (TxId)
 import           Ledger.Value                       (Value)
 import           Numeric.Natural                    (Natural)
 import           Plutus.Trace.Scheduler             (SystemCall, ThreadId)
@@ -74,7 +78,6 @@ import           Plutus.Trace.Types                 (Trace (..), TraceBackend (.
 import           Wallet.Emulator.Chain              (ChainState)
 import qualified Wallet.Emulator.Chain              as ChainState
 import           Wallet.Emulator.Wallet             (SigningProcess, Wallet (..), WalletState)
-import qualified Wallet.Emulator.Wallet             as Wallet
 import           Wallet.Types                       (ContractInstanceId, Notification)
 
 type ContractConstraints s =
@@ -122,7 +125,7 @@ data ContractHandle s e =
 data EmulatorLocal r where
     ActivateContract :: (ContractConstraints s, HasBlockchainActions s) => ContractInstanceTag -> Contract s e () -> EmulatorLocal (ContractHandle s e)
     CallEndpointEm :: forall l ep s e. (ContractConstraints s, HasEndpoint l ep s) => Proxy l -> ContractHandle s e -> ep -> EmulatorLocal ()
-    PayToWallet :: Wallet -> Value -> EmulatorLocal ()
+    PayToWallet :: Interval Slot -> Wallet -> Value -> EmulatorLocal TxId
     SetSigningProcess :: SigningProcess -> EmulatorLocal ()
     AgentState :: EmulatorLocal WalletState
 
@@ -143,18 +146,27 @@ activateContract wallet tag = send @(Trace Emulator) . RunLocal wallet . Activat
 callEndpoint :: forall l ep s e. (ContractConstraints s, HasEndpoint l ep s) => Wallet -> ContractHandle s e -> ep -> EmulatorTrace ()
 callEndpoint wallet hdl = send @(Trace Emulator) . RunLocal wallet . CallEndpointEm (Proxy @l) hdl
 
-payToWallet :: Wallet -> Wallet -> Value -> EmulatorTrace ()
-payToWallet from_ to_ = send @(Trace Emulator) . RunLocal from_ . PayToWallet to_
+-- | Pay some funds from one wallet to another
+payToWallet :: Wallet -> Wallet -> Value -> EmulatorTrace TxId
+payToWallet from_ to_ = payToWallet' I.always from_ to_
 
+-- | Pay some funds from one wallet to another with the given validity range
+payToWallet' :: Interval Slot -> Wallet -> Wallet -> Value -> EmulatorTrace TxId
+payToWallet' range_ from_ to_ = send @(Trace Emulator) . RunLocal from_ . PayToWallet range_ to_
+
+-- | Wait until the simulation has reached the given slot
 waitUntilSlot :: Slot -> EmulatorTrace Slot
 waitUntilSlot sl = send @(Trace Emulator) $ RunGlobal (WaitUntilSlot sl)
 
+-- | Look at the 'WalletState' of the agent
 agentState :: Wallet -> EmulatorTrace WalletState
 agentState wallet = send @(Trace Emulator) $ RunLocal wallet AgentState
 
+-- | Look at the 'ChainState'
 chainState :: EmulatorTrace ChainState
 chainState = send @(Trace Emulator) $ RunGlobal ChainState
 
+-- | Wait for a number of slots
 waitNSlots :: Natural -> EmulatorTrace Slot
 waitNSlots n = do
     Slot c <- view ChainState.currentSlot <$> chainState
@@ -165,6 +177,11 @@ data ContractInstanceError =
     | JSONDecodingError String
     deriving stock (Eq, Ord, Show, Generic)
     deriving anyclass (ToJSON, FromJSON)
+
+instance Pretty ContractInstanceError where
+    pretty = \case
+        ThreadIdNotFound i -> "Thread ID not found:" <+> pretty i
+        JSONDecodingError e -> "JSON decoding error:" <+> pretty e
 
 -- | A user-defined tag for a contract instance. Used to find the instance's
 --   log messages in the emulator log.
@@ -184,6 +201,16 @@ data ContractInstanceMsg =
     deriving stock (Eq, Ord, Show, Generic)
     deriving anyclass (ToJSON, FromJSON)
 
+instance Pretty ContractInstanceMsg where
+    pretty = \case
+        Started -> "Started"
+        Stopped -> "Stopped"
+        ReceiveEndpointCall v -> "Receive endpoint call:" <+> viaShow v
+        NoRequestsHandled -> "No requests handled"
+        HandledRequest rsp -> "Handled request:" <+> pretty (show . JSON.encode <$> rsp)
+        HandleInstanceRequests lst -> "Handle instance requests:" <+> fillSep (pretty . fmap (show . JSON.encode) <$> lst)
+        InstErr e -> "Error:" <+> pretty e
+
 data ContractInstanceLog =
     ContractInstanceLog
         { _cilMessage :: ContractInstanceMsg
@@ -192,6 +219,13 @@ data ContractInstanceLog =
         }
     deriving stock (Eq, Ord, Show, Generic)
     deriving anyclass (ToJSON, FromJSON)
+
+instance Pretty ContractInstanceLog where
+    pretty ContractInstanceLog{_cilMessage, _cilId, _cilTag} =
+        pretty _cilId
+        <+> braces (pretty _cilTag)
+        <> colon 
+        <+> pretty _cilMessage
 
 makeLenses ''ContractInstanceLog
 makePrisms ''ContractInstanceMsg

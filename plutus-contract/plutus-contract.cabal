@@ -88,6 +88,7 @@ library
         Wallet.Types
         Control.Monad.Freer.Extras
         Control.Monad.Freer.Log
+        Control.Monad.Freer.Stream
         Plutus.Trace
         Plutus.Trace.Effects.ContractInstanceId
         Plutus.Trace.Emulator
@@ -133,7 +134,8 @@ library
         uuid -any,
         aeson-pretty -any,
         unordered-containers -any,
-        foldl -any
+        foldl -any,
+        streaming -any
 
     if !(impl(ghcjs) || os(ghcjs))
         exposed-modules:

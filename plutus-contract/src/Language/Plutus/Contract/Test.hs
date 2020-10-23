@@ -43,17 +43,18 @@ module Language.Plutus.Contract.Test(
     , checkPredicate
     ) where
 
-import           Control.Lens                                    (at, (^.))
+import           Control.Lens                                    (at, (^.), matching, filtered, preview)
 import           Control.Monad                                   (guard, unless)
 import Control.Foldl (FoldM)
 import qualified Control.Foldl as L
-import           Control.Monad.Freer                             (Eff, runM, sendM, reinterpret)
+import           Control.Monad.Freer                             (Eff, runM, sendM, reinterpret, run)
 import Control.Monad.Freer.Error (Error, runError)
 import Control.Applicative (liftA2)
-import           Control.Monad.Freer.Log                         (LogMessage (..))
+import           Control.Monad.Freer.Log                         (LogMessage (..), LogLevel(..), logMessageContent)
 import Ledger.Tx (Tx)
 import Control.Monad.Freer.Reader
 import Control.Monad.Freer.Writer (Writer(..), tell)
+import GHC.Natural (Natural)
 import qualified Data.Aeson                                      as JSON
 import           Data.Foldable                                   (fold, toList, traverse_)
 import           Data.Maybe                                      (mapMaybe)
@@ -90,15 +91,19 @@ import           Ledger.Index                                    (ValidationErro
 import           Ledger.Slot                                     (Slot)
 import           Ledger.Value                                    (Value)
 import           Wallet.Emulator                                 (EmulatorEvent)
+import Wallet.Emulator.MultiAgent (eteEvent, chainEvent)
+import Wallet.Emulator.Chain (_SlotAdd)
 
 import           Language.Plutus.Contract.Schema                 (Event (..), Handlers (..), Input, Output)
 import           Language.Plutus.Contract.Trace                  as X
 import Plutus.Trace.Emulator (EmulatorConfig(..))
-import           Plutus.Trace                                    (Emulator, Trace, defaultEmulatorConfig)
+import           Plutus.Trace                                    (Emulator, Trace, defaultEmulatorConfig, EmulatorErr)
 import           Plutus.Trace.Emulator                           (runEmulatorStream)
 import qualified Wallet.Emulator.Folds as Folds
 import Wallet.Emulator.Folds (EmulatorFoldErr, postMapM, Outcome(..))
 import Plutus.Trace.Emulator.Types (ContractInstanceTag, ContractConstraints)
+import qualified Streaming.Prelude as S
+import qualified Streaming as S
 
 type TracePredicate = FoldM (Eff '[Reader InitialDistribution, Error EmulatorFoldErr, Writer (Doc Void)]) EmulatorEvent Bool
 
@@ -120,11 +125,13 @@ not = fmap Prelude.not
 data CheckOptions =
     CheckOptions
         { coMinLogLevel :: LogLevel -- ^ Minimum log level for emulator log messages to be included in the test output (printed if the test fails)
-        , coMaxSlots :: Natural -- ^ When to stop the emulator
+        , coMaxSlot :: Slot -- ^ When to stop the emulator
         }
 
+type TestEffects = '[Reader InitialDistribution, Error EmulatorFoldErr, Writer (Doc Void)]
+
 checkPredicate
-    :: forall s e a
+    :: forall s e
     . ( Show e
       , Forall (Input s) Pretty
       , Forall (Output s) Pretty
@@ -137,26 +144,37 @@ checkPredicate
     -> TracePredicate
     -> Eff '[Trace Emulator] ()
     -> TestTree
-checkPredicate CheckOptions{coMinLogLevel, coMaxSlots} nm predicate action = HUnit.testCaseSteps nm $ \step -> do
+checkPredicate CheckOptions{coMinLogLevel, coMaxSlot} nm predicate action = HUnit.testCaseSteps nm $ \step -> do
     let cfg = defaultEmulatorConfig
         dist = _initialDistribution cfg
-        theStream = runEmulatorStream (Just coMaxSlots) cfg action
+        theStream :: forall effs. S.Stream (S.Of (LogMessage EmulatorEvent)) (Eff effs) ()
+        theStream = 
+            S.takeWhile (maybe True (\sl -> sl <= coMaxSlot) . preview (logMessageContent . eteEvent . chainEvent . _SlotAdd))
+            $ runEmulatorStream cfg action
+        theFold :: FoldM (Eff TestEffects) (LogMessage EmulatorEvent) Bool
+        theFold = L.premapM (pure . _logMessageContent) predicate
+        consumeStream :: forall a. S.Stream (S.Of (LogMessage EmulatorEvent)) (Eff TestEffects) a -> Eff TestEffects (S.Of Bool a)
+        consumeStream = L.impurely S.foldM theFold
     result <- runM
                 $ reinterpret @(Writer (Doc Void)) @IO  (\case { Tell d -> sendM $ step $ Text.unpack $ renderStrict $ layoutPretty defaultLayoutOptions d })
                 $ runError
                 $ runReader dist
-                $ L.foldM (L.premapM (pure . _logMessageContent) predicate) theStream
+                $ consumeStream theStream
 
     case result of
         Left err -> do
             step "Test failed."
             step "Emulator log:"
-            -- TODO: Filter by log level?
-            traverse_ (step . Text.unpack . renderStrict . layoutPretty defaultLayoutOptions . pretty) theStream
+            
+            S.mapM_ step
+              $ S.hoist runM
+              $ S.map (Text.unpack . renderStrict . layoutPretty defaultLayoutOptions . pretty)
+              $ S.mapMaybe (preview (filtered (\LogMessage{_logLevel} -> coMinLogLevel <= _logLevel)))
+                theStream
             step "Error:"
             step (show err)
             HUnit.assertBool nm False
-        Right b -> HUnit.assertBool nm b
+        Right b -> HUnit.assertBool nm $ S.fst' b
 
 endpointAvailable
     :: forall (l :: Symbol) s e a.

@@ -177,7 +177,7 @@ logError m = send $ LMessage (LogMessage Error m)
 --   (Does the same thing as 'Covariant.contramap' for
 --   'Control.Tracer.Trace')
 mapLog ::
-    forall a b c effs.
+    forall a b effs.
     Member (LogMsg b) effs
     => (a -> b)
     -> LogMsg a

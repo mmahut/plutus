@@ -40,8 +40,6 @@ module Plutus.Trace.Emulator(
     -- * Interpreter
     , interpretEmulatorTrace
     , emInterpreter
-    -- * Testing
-    , runTest
     ) where
 
 import           Control.Lens
@@ -54,6 +52,7 @@ import           Control.Monad.Freer.Extras                      (raiseEnd, rais
 import           Control.Monad.Freer.Log                         (LogLevel (..), LogMessage (..), LogMsg (..),
                                                                   handleLogWriter, mapLog, mapMLog)
 import           Control.Monad.Freer.Reader                      (runReader)
+import Control.Monad.Freer.Stream (runStream)
 import           Control.Monad.Freer.State                       (State, evalState, gets, runState)
 import           Control.Monad.Freer.Writer                      (Writer, tell)
 import qualified Data.Aeson                                      as JSON
@@ -65,11 +64,14 @@ import           Data.Proxy                                      (Proxy)
 import           Data.Text.Prettyprint.Doc                       (Pretty (pretty))
 import           Language.Plutus.Contract                        (Contract, HasEndpoint, HasBlockchainActions)
 import qualified Language.Plutus.Contract.Effects.ExposeEndpoint as Endpoint
+import Ledger.Interval (Interval)
+import Ledger.TxId (TxId)
+import Ledger.Tx (txId)
 import           Ledger.Slot                                     (Slot (..))
 import           Ledger.Value                                    (Value)
 import           Plutus.Trace.Scheduler                          (Priority (..), SysCall (..), SystemCall,
                                                                   ThreadType (..), fork, mkSysCall, runThreads, sleep)
-import           Wallet.API                                      (WalletAPIError, defaultSlotRange, payToPublicKey_)
+import           Wallet.API                                      (WalletAPIError, defaultSlotRange, payToPublicKey)
 import qualified Wallet.Emulator                                 as EM
 import           Wallet.Emulator.Chain                           (ChainControlEffect, ChainEffect, getCurrentSlot)
 import qualified Wallet.Emulator.Chain                           as ChainState
@@ -90,11 +92,15 @@ import           Plutus.Trace.Emulator.Types                     (ContractConstr
                                                                   EmulatorMessage (..), EmulatorThreads, ContractInstanceTag)
 import qualified Plutus.Trace.Emulator.Types                     as Types
 import           Plutus.Trace.Types
+import Streaming (Stream)
+import Streaming.Prelude (Of)
+import qualified Streaming.Prelude as S
+import qualified Streaming as S
 
 
 data EmulatorConfig =
     EmulatorConfig
-        { _initialDistribution :: InitialDistribution
+        { _initialDistribution :: InitialDistribution 
         }
 
 defaultEmulatorConfig :: EmulatorConfig
@@ -110,7 +116,10 @@ runEmulatorTrace :: EmulatorConfig -> Eff '[Trace Emulator] a -> (Either Emulato
 runEmulatorTrace conf = runTraceBackend conf . interpretEmulatorTrace (conf ^. initialDistribution . to Map.keys)
 
 -- | Run a 'Trace Emulator', streaming the log messages as they arrive
-runEmulatorStream :: EmulatorConfig -> Eff '[Trace Emulator] a -> Stream (Maybe EmulatorErr) (LogMessage EmulatorEvent)
+runEmulatorStream :: forall effs a.
+    EmulatorConfig
+    -> Eff '[Trace Emulator] a
+    -> Stream (Of (LogMessage EmulatorEvent)) (Eff effs) (Maybe EmulatorErr)
 runEmulatorStream conf = runTraceStream conf . interpretEmulatorTrace (conf ^. initialDistribution . to Map.keys)
 
 data EmulatorErr =
@@ -144,30 +153,15 @@ runTraceBackend conf =
     . subsume @(State EmulatorState)
     . raiseEnd6
 
--- | A stream of 'e's that may terminate with an 'a'
-newtype Stream a e = Stream { unStream :: (Either a (Stream a e, e)) }
-    deriving (Functor, Foldable, Traversable)
-
-instance Bifunctor Stream where
-    bimap l r = Stream . bimap l (bimap (bimap l r) r) . unStream
-
 handleLogCoroutine :: forall e effs.
     Member (Yield (LogMessage e) ()) effs
     => LogMsg e
     ~> Eff effs
 handleLogCoroutine = \case LMessage m -> yield m id
 
-runStream :: forall e a.
-    Eff '[Yield e ()] a
-    -> Stream a e
-runStream = f . run . runC where
-    f = \case
-            Done a -> Stream $ Left a
-            Continue e cont -> Stream $ Right (f $ run $ cont (), e)
-
 -- | Turn an emulator trace into a potentially infinite 'Stream' of emulator
 --   log messages.
-runTraceStream :: 
+runTraceStream :: forall effs.
     EmulatorConfig
     -> Eff '[ State EmulatorState
             , LogMsg EmulatorEvent'
@@ -176,10 +170,11 @@ runTraceStream ::
             , ChainControlEffect
             , Error ContractInstanceError
             ] ()
-    -> Stream (Maybe EmulatorErr) (LogMessage EmulatorEvent)
-runTraceStream conf = 
-    first (either Just (const Nothing))
-    . runStream
+    -> Stream (Of (LogMessage EmulatorEvent)) (Eff effs) (Maybe EmulatorErr)
+runTraceStream conf =  
+    fmap (either Just (const Nothing))
+    . S.hoist (pure . run)
+    . runStream @(LogMessage EmulatorEvent) @_ @'[]
     . evalState (initialState conf)
     . interpret handleLogCoroutine
     . reinterpret @_ @(LogMsg EmulatorEvent) (mkTimedLogs @EmulatorEvent')
@@ -260,18 +255,20 @@ emRunLocal :: forall b effs.
 emRunLocal wllt = \case
     ActivateContract tag con -> activate wllt tag con
     CallEndpointEm p h v -> callEndpoint p h v
-    PayToWallet target vl -> payToWallet wllt target vl
+    PayToWallet range target vl -> payToWallet range wllt target vl
     SetSigningProcess sp -> setSigningProcess wllt sp
     AgentState -> gets @EmulatorState (fromMaybe (Wallet.emptyWalletState wllt) . view (EM.walletStates . at wllt))
 
 payToWallet :: forall effs.
     ( Member MultiAgentEffect effs )
-    => Wallet
+    => Interval Slot
+    -> Wallet
     -> Wallet
     -> Value
-    -> Eff (Yield (SystemCall effs EmulatorMessage) (Maybe EmulatorMessage) ': effs) ()
-payToWallet source target amount = void $ fork @effs @EmulatorMessage User High payment
-    where payment = walletAction source $ payToPublicKey_ defaultSlotRange amount (EM.walletPubKey target)
+    -> Eff (Yield (SystemCall effs EmulatorMessage) (Maybe EmulatorMessage) ': effs) TxId
+payToWallet range source target amount = do
+    -- TODO: Maybe this should also happen in a separate thread?
+    walletAction source $ fmap txId $ payToPublicKey range amount (EM.walletPubKey target)
 
 setSigningProcess :: forall effs.
     ( Member MultiAgentEffect effs )
@@ -324,13 +321,3 @@ emRunGlobal = \case
     WaitUntilSlot s -> go where
         go = sleep @effs Sleeping >>= \case { Just (NewSlot sl) | sl >= s -> pure sl; _ -> go }
     ChainState  -> gets (view EM.chainState)
-
-runTest :: forall a.
-    Eff '[Trace Emulator] a
-    -> IO ()
-runTest action = do
-    let result = runEmulatorStream defaultEmulatorConfig (Types.waitNSlots 1 >> action)
-    let go (Stream e) = case e of
-            Left m -> print m
-            Right (s, a) -> print (pretty a) >> go s
-    go result

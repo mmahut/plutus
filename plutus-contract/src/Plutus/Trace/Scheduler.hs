@@ -48,13 +48,11 @@ import           Data.HashMap.Strict              (HashMap)
 import qualified Data.HashMap.Strict              as HashMap
 import           Data.HashSet                     (HashSet)
 import qualified Data.HashSet                     as HashSet
-import           Data.Map                         (Map)
 import           Data.Map                         as Map
 import           Data.Sequence                    (Seq (..))
 import qualified Data.Sequence                    as Seq
 import           Data.Text.Prettyprint.Doc
 import           Data.Text.Prettyprint.Doc.Extras (PrettyShow (..), Tagged (..))
-import qualified Debug.Trace                      as Trace
 import           GHC.Generics                     (Generic)
 
 newtype ThreadId = ThreadId { unThreadId :: Int }
