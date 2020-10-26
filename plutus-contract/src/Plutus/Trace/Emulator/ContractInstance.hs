@@ -107,6 +107,7 @@ contractThread ContractHandle{chInstanceId, chContract, chInstanceTag} = do
         $ interpret (mapLog (\m -> ContractInstanceLog m chInstanceId chInstanceTag))
         $ do
             logInfo Started
+            logCurrentRequests
             msg <- mkSysCall @effs @EmulatorMessage Low Suspend
             runInstance msg
 
@@ -155,7 +156,6 @@ runInstance :: forall s e a effs.
     -> Eff (ContractInstanceThreadEffs s e a effs) ()
 runInstance event = do
     hks <- getHooks @s @e @a
-    logDebug $ HandleInstanceRequests $ fmap (fmap JSON.toJSON) hks
     when (null hks) $ logInfo Stopped
     unless (null hks) $ do
         case event of
@@ -279,12 +279,27 @@ addEventInstanceState event s@ContractInstanceState{instContractState, instEvent
 -- Logging
 ---
 
-logResponse ::  forall s effs.
-    ( Member (LogMsg ContractInstanceMsg) effs
+logResponse ::  forall s e a effs.
+    ( Member MultiAgentEffect effs
     , ContractConstraints s
+    , HasBlockchainActions s
+    , Member (Error ContractInstanceError) effs
     )
     => Maybe (Response (Event s))
-    -> Eff effs ()
+    -> Eff (ContractInstanceThreadEffs s e a effs) ()
 logResponse = \case
-    Nothing -> logInfo NoRequestsHandled
-    Just rsp -> logInfo $ HandledRequest $ fmap JSON.toJSON rsp
+    Nothing -> logDebug NoRequestsHandled
+    Just rsp -> do
+        logInfo $ HandledRequest $ fmap JSON.toJSON rsp
+        logCurrentRequests
+
+logCurrentRequests :: forall s e a effs.
+    ( Member MultiAgentEffect effs
+    , ContractConstraints s
+    , HasBlockchainActions s
+    , Member (Error ContractInstanceError) effs
+    )
+    => Eff (ContractInstanceThreadEffs s e a effs) ()
+logCurrentRequests = do
+    hks <- getHooks @s @e @a
+    logInfo $ CurrentRequests $ fmap (fmap JSON.toJSON) hks

@@ -13,7 +13,7 @@ main = defaultMain tests
 tests :: TestTree
 tests = testGroup "plutus-contract" [
     Spec.Contract.tests,
-    Spec.Emulator.tests,
+    -- Spec.Emulator.tests,
     Spec.State.tests,
     Spec.Rows.tests
     ]

@@ -2,6 +2,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE AllowAmbiguousTypes  #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE DerivingVia          #-}
@@ -41,26 +42,26 @@ module Language.Plutus.Contract.Test(
     , valueAtAddress
     -- * Checking predicates
     , checkPredicate
+    , CheckOptions
+    , defaultCheckOptions
+    , minLogLevel
+    , maxSlot
     ) where
 
-import           Control.Lens                                    (at, (^.), matching, filtered, preview)
+import           Control.Lens                                    (at, (^.), filtered, preview, makeLenses)
 import           Control.Monad                                   (guard, unless)
 import Control.Foldl (FoldM)
 import qualified Control.Foldl as L
-import           Control.Monad.Freer                             (Eff, runM, sendM, reinterpret, run)
+import           Control.Monad.Freer                             (Eff, runM, sendM, reinterpret)
 import Control.Monad.Freer.Error (Error, runError)
-import Control.Applicative (liftA2)
 import           Control.Monad.Freer.Log                         (LogMessage (..), LogLevel(..), logMessageContent)
 import Ledger.Tx (Tx)
 import Control.Monad.Freer.Reader
 import Control.Monad.Freer.Writer (Writer(..), tell)
-import GHC.Natural (Natural)
-import qualified Data.Aeson                                      as JSON
-import           Data.Foldable                                   (fold, toList, traverse_)
+import           Data.Foldable                                   (fold, toList)
 import           Data.Maybe                                      (mapMaybe)
 import           Data.Proxy                                      (Proxy (..))
-import           Data.Row                                        (AllUniqueLabels, Forall, HasType)
-import           Data.Row.Internal                               (Unconstrained1)
+import           Data.Row                                        (Forall, HasType)
 import           Data.String                                     (IsString (..))
 import qualified Data.Text                                       as Text
 import           Data.Text.Prettyprint.Doc
@@ -75,7 +76,6 @@ import qualified Language.PlutusTx.Prelude                       as P
 import           Language.Plutus.Contract.Resumable              (Request (..), Response (..))
 import qualified Language.Plutus.Contract.Resumable              as State
 import           Language.Plutus.Contract.Types                  (Contract (..))
-import           Language.PlutusTx.Lattice
 import           Ledger.Constraints.OffChain                     (UnbalancedTx)
 
 import           Language.Plutus.Contract.Effects.AwaitSlot      (SlotSymbol)
@@ -97,7 +97,7 @@ import Wallet.Emulator.Chain (_SlotAdd)
 import           Language.Plutus.Contract.Schema                 (Event (..), Handlers (..), Input, Output)
 import           Language.Plutus.Contract.Trace                  as X
 import Plutus.Trace.Emulator (EmulatorConfig(..))
-import           Plutus.Trace                                    (Emulator, Trace, defaultEmulatorConfig, EmulatorErr)
+import           Plutus.Trace                                    (Emulator, Trace, defaultEmulatorConfig)
 import           Plutus.Trace.Emulator                           (runEmulatorStream)
 import qualified Wallet.Emulator.Folds as Folds
 import Wallet.Emulator.Folds (EmulatorFoldErr, postMapM, Outcome(..))
@@ -107,16 +107,17 @@ import qualified Streaming as S
 
 type TracePredicate = FoldM (Eff '[Reader InitialDistribution, Error EmulatorFoldErr, Writer (Doc Void)]) EmulatorEvent Bool
 
-instance JoinSemiLattice TracePredicate where
-    l \/ r = liftA2 (\/) l r
-instance MeetSemiLattice TracePredicate where
-    l /\ r = liftA2 (/\) l r
+-- instance JoinSemiLattice TracePredicate where
+--     l \/ r = liftA2 (\/) l r
+-- instance MeetSemiLattice TracePredicate where
+--     l /\ r = liftA2 (/\) l r
 
-instance BoundedJoinSemiLattice TracePredicate where
-    bottom = pure bottom
+-- instance BoundedJoinSemiLattice TracePredicate where
+--     bottom = pure bottom
 
-instance BoundedMeetSemiLattice TracePredicate where
-    top = pure top
+-- instance BoundedMeetSemiLattice TracePredicate where
+--     top = pure top
+
 
 not :: TracePredicate -> TracePredicate
 not = fmap Prelude.not
@@ -124,32 +125,33 @@ not = fmap Prelude.not
 -- | Options for running the 
 data CheckOptions =
     CheckOptions
-        { coMinLogLevel :: LogLevel -- ^ Minimum log level for emulator log messages to be included in the test output (printed if the test fails)
-        , coMaxSlot :: Slot -- ^ When to stop the emulator
+        { _minLogLevel :: LogLevel -- ^ Minimum log level for emulator log messages to be included in the test output (printed if the test fails)
+        , _maxSlot :: Slot -- ^ When to stop the emulator
+        } deriving (Eq, Show)
+
+makeLenses ''CheckOptions
+
+defaultCheckOptions :: CheckOptions
+defaultCheckOptions =
+    CheckOptions
+        { _minLogLevel = Info
+        , _maxSlot = 50
         }
 
 type TestEffects = '[Reader InitialDistribution, Error EmulatorFoldErr, Writer (Doc Void)]
 
 checkPredicate
-    :: forall s e
-    . ( Show e
-      , Forall (Input s) Pretty
-      , Forall (Output s) Pretty
-      , AllUniqueLabels (Input s)
-      , Forall (Input s) JSON.FromJSON
-      , Forall (Output s) Unconstrained1
-      )
-    => CheckOptions
-    -> String
-    -> TracePredicate
+    :: CheckOptions -- ^ Options to use
+    -> String -- ^ Descriptive name of the test
+    -> TracePredicate -- ^ The predicate to check 
     -> Eff '[Trace Emulator] ()
     -> TestTree
-checkPredicate CheckOptions{coMinLogLevel, coMaxSlot} nm predicate action = HUnit.testCaseSteps nm $ \step -> do
+checkPredicate CheckOptions{_minLogLevel, _maxSlot} nm predicate action = HUnit.testCaseSteps nm $ \step -> do
     let cfg = defaultEmulatorConfig
         dist = _initialDistribution cfg
         theStream :: forall effs. S.Stream (S.Of (LogMessage EmulatorEvent)) (Eff effs) ()
         theStream = 
-            S.takeWhile (maybe True (\sl -> sl <= coMaxSlot) . preview (logMessageContent . eteEvent . chainEvent . _SlotAdd))
+            S.takeWhile (maybe True (\sl -> sl <= _maxSlot) . preview (logMessageContent . eteEvent . chainEvent . _SlotAdd))
             $ runEmulatorStream cfg action
         theFold :: FoldM (Eff TestEffects) (LogMessage EmulatorEvent) Bool
         theFold = L.premapM (pure . _logMessageContent) predicate
@@ -161,20 +163,21 @@ checkPredicate CheckOptions{coMinLogLevel, coMaxSlot} nm predicate action = HUni
                 $ runReader dist
                 $ consumeStream theStream
 
-    case result of
-        Left err -> do
-            step "Test failed."
-            step "Emulator log:"
-            
-            S.mapM_ step
-              $ S.hoist runM
-              $ S.map (Text.unpack . renderStrict . layoutPretty defaultLayoutOptions . pretty)
-              $ S.mapMaybe (preview (filtered (\LogMessage{_logLevel} -> coMinLogLevel <= _logLevel)))
-                theStream
-            step "Error:"
-            step (show err)
-            HUnit.assertBool nm False
-        Right b -> HUnit.assertBool nm $ S.fst' b
+    unless (fmap S.fst' result == Right True) $ do
+        step "Test failed."
+        step "Emulator log:"
+        S.mapM_ step
+            $ S.hoist runM
+            $ S.map (Text.unpack . renderStrict . layoutPretty defaultLayoutOptions . pretty)
+            $ S.mapMaybe (preview (filtered (\LogMessage{_logLevel} -> _minLogLevel <= _logLevel)))
+            theStream
+
+        case result of
+            Left err -> do
+                step "Error:"
+                step (show err)
+                HUnit.assertBool nm False
+            Right _ -> HUnit.assertBool nm False
 
 endpointAvailable
     :: forall (l :: Symbol) s e a.
@@ -288,7 +291,7 @@ assertEvents contract inst pr nm =
         pure result
 
 -- | Check that the funds at an address meet some condition.
-valueAtAddress :: forall s e a. Address -> (Value -> Bool) -> TracePredicate
+valueAtAddress :: Address -> (Value -> Bool) -> TracePredicate
 valueAtAddress address check =
     flip postMapM (Folds.valueAtAddress address) $ \vl -> do
         let result = check vl
@@ -371,11 +374,7 @@ assertResponses contract inst p nm =
 --   without errors.
 assertDone
     :: forall s e a.
-    ( Forall (Input s) Pretty
-    , Forall (Output s) Pretty
-    , Show e
-    , Show a
-    , ContractConstraints s
+    ( ContractConstraints s
     )
     => Contract s e a
     -> ContractInstanceTag
@@ -388,11 +387,7 @@ assertDone contract inst pr = assertOutcome contract inst (\case { Done a -> pr 
 --   waiting for input.
 assertNotDone
     :: forall s e a.
-    ( Forall (Input s) Pretty
-    , Forall (Output s) Pretty
-    , Show e
-    , Show a
-    , ContractConstraints s
+    ( ContractConstraints s
     )
     => Contract s e a
     -> ContractInstanceTag
@@ -404,11 +399,7 @@ assertNotDone contract inst = assertOutcome contract inst (\case { NotDone -> Tr
 --   failed with an error.
 assertContractError
     :: forall s e a.
-    ( Forall (Input s) Pretty
-    , Forall (Output s) Pretty
-    , Show e
-    , Show a
-    , ContractConstraints s
+    ( ContractConstraints s
     )
     => Contract s e a
     -> ContractInstanceTag
@@ -419,11 +410,7 @@ assertContractError contract inst p = assertOutcome contract inst (\case { Faile
 
 assertOutcome
     :: forall s e a.
-       ( Forall (Input s) Pretty
-       , Forall (Output s) Pretty
-       , Show e
-       , Show a
-       , ContractConstraints s
+       ( ContractConstraints s
        )
     => Contract s e a
     -> ContractInstanceTag
@@ -441,12 +428,7 @@ assertOutcome contract inst p nm =
                 ]
         pure result
 
-walletFundsChange
-    :: forall s e a.
-       ()
-    => Wallet
-    -> Value
-    -> TracePredicate
+walletFundsChange :: Wallet -> Value -> TracePredicate
 walletFundsChange w dlt = 
     flip postMapM (Folds.walletFunds w) $ \finalValue -> do
         initialDist <- ask @InitialDistribution

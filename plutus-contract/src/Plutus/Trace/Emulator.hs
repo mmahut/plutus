@@ -13,6 +13,7 @@ module Plutus.Trace.Emulator(
     Emulator
     , EmulatorErr(..)
     , ContractHandle(..)
+    , ContractInstanceTag(..)
     -- * Constructing Traces
     , Types.activateContract
     , Types.callEndpoint

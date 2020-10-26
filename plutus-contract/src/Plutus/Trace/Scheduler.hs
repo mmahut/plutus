@@ -186,7 +186,7 @@ loop :: forall effs systemEvent.
     -> Eff effs ()
 loop s = do
     case dequeue s of
-        AThread EmThread{_continuation, _threadId} event schedulerState prio | hasActiveUserThreads schedulerState -> do
+        AThread EmThread{_continuation, _threadId} event schedulerState prio -> do
             logDebug SchedulerLog{slEvent=Resumed, slThread=_threadId, slPrio=prio}
             result <- _continuation event
             case result of

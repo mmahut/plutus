@@ -137,57 +137,63 @@ validFromTransaction = do
 
     walletAction w1 $ payToPublicKey_ range five pubKey2
 
+    undefined
     -- Add some blocks so that the transaction is validated
-    waitNSlots 10
-    traverse_ (uncurry assertOwnFundsEq) [
-        (w1, initialBalance P.- five),
-        (w2, initialBalance P.+ five)]
+    -- waitNSlots 10
+    -- traverse_ (uncurry assertOwnFundsEq) [
+    --     (w1, initialBalance P.- five),
+    --     (w2, initialBalance P.+ five)]
 
 txnIndex :: Property
 txnIndex = property $ do
-    (m, txn) <- forAll genChainTxn
-    let (result, st) = runEmulatorTrace (_ m) (simpleTrace txn)
-        ncState      = _chainState st
-    Hedgehog.assert (Index.initialise (Chain._chainNewestFirst ncState) == Chain._index ncState)
+    undefined
+    -- (m, txn) <- forAll genChainTxn
+    -- let (result, st) = runEmulatorTrace (_ m) (simpleTrace txn)
+    --     ncState      = _chainState st
+    -- Hedgehog.assert (Index.initialise (Chain._chainNewestFirst ncState) == Chain._index ncState)
 
 txnIndexValid :: Property
 txnIndexValid = property $ do
-    (m, txn) <- forAll genChainTxn
-    let (result, st) = Gen.runTrace m processPending
-        idx = st ^. chainState . Chain.index
-    Hedgehog.assert (isRight (Index.runValidation (Index.validateTransaction 0 txn) idx))
+    undefined
+    -- (m, txn) <- forAll genChainTxn
+    -- let (result, st) = Gen.runTrace m processPending
+    --     idx = st ^. chainState . Chain.index
+    -- Hedgehog.assert (isRight (Index.runValidation (Index.validateTransaction 0 txn) idx))
 
 
 -- | Submit a transaction to the blockchain and assert that it has been
 --   validated
 simpleTrace :: Tx -> Eff.Eff EmulatorEffs ()
 simpleTrace txn = do
-    txn' <- walletAction wallet1 $ signTxAndSubmit txn
-    block <- processPending
-    assertIsValidated txn'
+    undefined
+    -- txn' <- walletAction wallet1 $ signTxAndSubmit txn
+    -- block <- processPending
+    -- assertIsValidated txn'
 
 txnUpdateUtxo :: Property
 txnUpdateUtxo = property $ do
-    (Mockchain m _, txn) <- forAll genChainTxn
-    let idx  = Index.initialise [m]
-        slot = 1
+    undefined
+    -- (Mockchain m _, txn) <- forAll genChainTxn
+    -- let idx  = Index.initialise [m]
+    --     slot = 1
 
-        -- Validate a pool that contains `txn` twice. It should succeed the
-        -- first and fail the second time
-        Chain.ValidatedBlock [t1] [e2, e1, _] [] = Chain.validateBlock slot idx [txn, txn]
-        tid = txId txn
-    Hedgehog.assert (t1 == txn)
-    Hedgehog.annotateShow (e1, e2)
-    Hedgehog.assert $ case (e1, e2) of
-        (Chain.TxnValidate i1, Chain.TxnValidationFail txi (Index.TxOutRefNotFound _)) -> i1 == tid && txi == tid
-        _                                                                              -> False
+    --     -- Validate a pool that contains `txn` twice. It should succeed the
+    --     -- first and fail the second time
+    --     Chain.ValidatedBlock [t1] [e2, e1, _] [] = Chain.validateBlock slot idx [txn, txn]
+        -- tid = txId txn
+    -- Hedgehog.assert (t1 == txn)
+    -- Hedgehog.annotateShow (e1, e2)
+    -- Hedgehog.assert $ case (e1, e2) of
+    --     (Chain.TxnValidate i1, Chain.TxnValidationFail txi (Index.TxOutRefNotFound _)) -> i1 == tid && txi == tid
+    --     _                                                                              -> False
 
 validTrace :: Property
 validTrace = property $ do
-    (m, txn) <- forAll genChainTxn
-    let (result, st) = Gen.runTrace m $ processPending >> simpleTrace txn
-    Hedgehog.assert (isRight result)
-    Hedgehog.assert ([] == st ^. chainState . txPool)
+    undefined
+    -- (m, txn) <- forAll genChainTxn
+    -- let (result, st) = Gen.runTrace m $ processPending >> simpleTrace txn
+    -- Hedgehog.assert (isRight result)
+    -- Hedgehog.assert ([] == st ^. chainState . txPool)
 
 invalidTrace :: Property
 invalidTrace = property $ do
@@ -218,17 +224,18 @@ invalidScript = property $ do
     Hedgehog.annotateShow (invalidTxn)
 
     let (result, st) = Gen.runTrace m $ do
-            processPending
+            undefined
+            -- processPending
             -- we need to sign scriptTxn again because it has been modified
             -- note that although 'scriptTxn' is submitted by wallet 1, it
             -- may spend outputs belonging to one of the other two wallets.
             -- So we can't use 'signTxAndSubmit_' (because it would only attach
             -- wallet 1's signatures). Instead, we get all the wallets'
             -- signatures with 'signAll'.
-            walletAction wallet1 $ submitTxn (Gen.signAll scriptTxn)
-            processPending
-            walletAction wallet1 $ signTxAndSubmit_ invalidTxn
-            processPending
+            -- walletAction wallet1 $ submitTxn (Gen.signAll scriptTxn)
+            -- processPending
+            -- walletAction wallet1 $ signTxAndSubmit_ invalidTxn
+            -- processPending
 
     Hedgehog.assert (isRight result)
     Hedgehog.assert ([] == st ^. chainState . txPool)
@@ -259,55 +266,59 @@ txnFlowsTest = property $ do
 
 notifyWallet :: Property
 notifyWallet = property $ do
-    let w = wallet1
-    (e, _) <- forAll
-        $ Gen.runTraceOn Gen.generatorModel
-        $ do
-            processPending >>= walletNotifyBlock w
-            assertOwnFundsEq w initialBalance
+    undefined
+    -- let w = wallet1
+    -- (e, _) <- forAll
+        -- $ Gen.runTraceOn Gen.generatorModel
+        -- $ do
+            -- processPending >>= walletNotifyBlock w
+            -- assertOwnFundsEq w initialBalance
+            -- undefined
 
-    Hedgehog.assert $ isRight e
+    -- Hedgehog.assert $ isRight e
 
 payToPubKeyScript2 :: Property
 payToPubKeyScript2 = property $ do
-    let [w1, w2, w3] = [wallet1, wallet2, wallet3]
-        updateAll = processPending >>= walletsNotifyBlock [w1, w2, w3]
-        payment1 = initialBalance P.- Ada.lovelaceValueOf 1
-        payment2 = initialBalance P.+ Ada.lovelaceValueOf 1
-    (e, _) <- forAll
-        $ Gen.runTraceOn Gen.generatorModel
-        $ do
-            updateAll
-            walletAction wallet1 $ payToPublicKey_ W.always payment1 pubKey2
-            updateAll
-            walletAction wallet2 $ payToPublicKey_ W.always payment2 pubKey3
-            updateAll
-            walletAction wallet3 $ payToPublicKey_ W.always payment2 pubKey1
-            updateAll
-            walletAction wallet1 $ payToPublicKey_ W.always (Ada.lovelaceValueOf 2) pubKey2
-            updateAll
-            traverse_ (uncurry assertOwnFundsEq) [
-                (w1, initialBalance),
-                (w2, initialBalance),
-                (w3, initialBalance)]
-    Hedgehog.assert $ isRight e
+    undefined
+    -- let [w1, w2, w3] = [wallet1, wallet2, wallet3]
+    --     updateAll = processPending >>= walletsNotifyBlock [w1, w2, w3]
+    --     payment1 = initialBalance P.- Ada.lovelaceValueOf 1
+    --     payment2 = initialBalance P.+ Ada.lovelaceValueOf 1
+    -- (e, _) <- forAll
+    --     $ Gen.runTraceOn Gen.generatorModel
+    --     $ do
+    --         updateAll
+    --         walletAction wallet1 $ payToPublicKey_ W.always payment1 pubKey2
+    --         updateAll
+    --         walletAction wallet2 $ payToPublicKey_ W.always payment2 pubKey3
+    --         updateAll
+    --         walletAction wallet3 $ payToPublicKey_ W.always payment2 pubKey1
+    --         updateAll
+    --         walletAction wallet1 $ payToPublicKey_ W.always (Ada.lovelaceValueOf 2) pubKey2
+    --         updateAll
+    --         traverse_ (uncurry assertOwnFundsEq) [
+    --             (w1, initialBalance),
+    --             (w2, initialBalance),
+    --             (w3, initialBalance)]
+    -- Hedgehog.assert $ isRight e
 
 pubKeyTransactions :: Eff.Eff EmulatorEffs ()
 pubKeyTransactions = do
-    let [w1, w2, w3] = [wallet1, wallet2, wallet3]
-        updateAll = processPending >>= walletsNotifyBlock [w1, w2, w3]
-        five = Ada.lovelaceValueOf 5
-    updateAll
-    walletAction wallet1 $ payToPublicKey_ W.always five pubKey2
-    updateAll
-    walletAction wallet2 $ payToPublicKey_ W.always five pubKey3
-    updateAll
-    walletAction wallet3 $ payToPublicKey_ W.always five pubKey1
-    updateAll
-    traverse_ (uncurry assertOwnFundsEq) [
-        (w1, initialBalance),
-        (w2, initialBalance),
-        (w3, initialBalance)]
+    undefined
+    -- let [w1, w2, w3] = [wallet1, wallet2, wallet3]
+    --     updateAll = processPending >>= walletsNotifyBlock [w1, w2, w3]
+    --     five = Ada.lovelaceValueOf 5
+    -- updateAll
+    -- walletAction wallet1 $ payToPublicKey_ W.always five pubKey2
+    -- updateAll
+    -- walletAction wallet2 $ payToPublicKey_ W.always five pubKey3
+    -- updateAll
+    -- walletAction wallet3 $ payToPublicKey_ W.always five pubKey1
+    -- updateAll
+    -- traverse_ (uncurry assertOwnFundsEq) [
+    --     (w1, initialBalance),
+    --     (w2, initialBalance),
+    --     (w3, initialBalance)]
 
 payToPubKeyScript :: Property
 payToPubKeyScript = property $ do

@@ -45,7 +45,7 @@ module Plutus.Trace.Emulator.Types(
     , _ReceiveEndpointCall
     , _NoRequestsHandled
     , _HandledRequest
-    , _HandleInstanceRequests
+    , _CurrentRequests
     , _InstErr
     ) where
 
@@ -196,7 +196,7 @@ data ContractInstanceMsg =
     | ReceiveEndpointCall JSON.Value
     | NoRequestsHandled
     | HandledRequest (Response JSON.Value)
-    | HandleInstanceRequests [Request JSON.Value]
+    | CurrentRequests [Request JSON.Value]
     | InstErr ContractInstanceError
     deriving stock (Eq, Ord, Show, Generic)
     deriving anyclass (ToJSON, FromJSON)
@@ -208,7 +208,7 @@ instance Pretty ContractInstanceMsg where
         ReceiveEndpointCall v -> "Receive endpoint call:" <+> viaShow v
         NoRequestsHandled -> "No requests handled"
         HandledRequest rsp -> "Handled request:" <+> pretty (show . JSON.encode <$> rsp)
-        HandleInstanceRequests lst -> "Handle instance requests:" <+> fillSep (pretty . fmap (show . JSON.encode) <$> lst)
+        CurrentRequests lst -> "Current requests:" <+> fillSep (pretty . fmap (show . JSON.encode) <$> lst)
         InstErr e -> "Error:" <+> pretty e
 
 data ContractInstanceLog =
