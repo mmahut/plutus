@@ -100,21 +100,16 @@ tests =
           in run 1 "call endpoint (2)"
                 (endpointAvailable @"2" theContract tag .&&. not (endpointAvailable @"1" theContract tag))
                 (activateContract w1 theContract tag >>= \hdl -> callEndpoint @"1" w1 hdl 1)
+        
+        , let theContract :: Contract Schema ContractError () = void $ endpoint @"1" @Int >> endpoint @"2" @Int
+          in run 1 "call endpoint (3)"
+                (not (endpointAvailable @"2" theContract tag) .&&. not (endpointAvailable @"1" theContract tag))
+                (activateContract w1 theContract tag >>= \hdl -> callEndpoint @"1" w1 hdl 1 >> callEndpoint @"2" w1 hdl 2)
 
-        -- , cp "call endpoint (2)"
-        --     (void $ endpoint @"1" @Int >> endpoint @"2" @Int)
-        --     (endpointAvailable @"2" w1 /\ not (endpointAvailable @"1" w1))
-        --     (callEndpoint @"1" @Int w1 1)
-
-        -- , cp "call endpoint (3)"
-        --     (void $ endpoint @"1" @Int >> endpoint @"2" @Int)
-        --     (not (endpointAvailable @"2" w1) /\ not (endpointAvailable @"1" w1))
-        --     (callEndpoint @"1" @Int w1 1 >> callEndpoint @"2" @Int w1 1)
-
-        -- , cp "submit tx"
-        --     (void $ submitTx mempty >> watchAddressUntil someAddress 20)
-        --     (waitingForSlot w1 20)
-        --     (handleBlockchainEvents w1 >> addBlocks 1)
+        , let theContract :: Contract Schema ContractError () = void $ submitTx mempty >> watchAddressUntil someAddress 20
+          in run 1 "submit tx"
+                (waitingForSlot theContract tag 20)
+                (void $ activateContract w1 theContract tag)
 
         -- , let smallTx = Constraints.mustPayToPubKey (Crypto.pubKeyHash $ walletPubKey (Wallet 2)) (Ada.lovelaceValueOf 10)
         --   in cp "handle several blockchain events"
