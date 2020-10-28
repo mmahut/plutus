@@ -12,17 +12,15 @@ import           Language.PlutusTx.PLCTypes
 
 import           Language.PlutusIR.Compiler.Definitions
 
-import           Language.PlutusCore.Quote
-import qualified Language.PlutusCore.Universe           as PLC
 import qualified Language.PlutusCore                    as PLC
 import qualified Language.PlutusCore.Constant           as PLC
+import           Language.PlutusCore.Quote
 
 import qualified FamInstEnv                             as GHC
 import qualified GhcPlugins                             as GHC
 
 import           Control.Monad.Except
 import           Control.Monad.Reader
-import           Control.Monad.State
 
 import qualified Data.List.NonEmpty                     as NE
 import qualified Data.Map                               as Map
@@ -44,8 +42,6 @@ data CompileContext uni = CompileContext {
     ccBlackholed      :: Set.Set GHC.Name,
     ccBuiltinMeanings :: PLC.DynamicBuiltinNameMeanings (PLC.Term PLC.TyName PLC.Name uni ())
     }
-
-data CompileState = CompileState {}
 
 -- | A wrapper around 'GHC.Name' with a stable 'Ord' instance. Use this where the ordering
 -- will affect the output of the compiler, i.e. when sorting or so on. It's  fine to use
@@ -118,7 +114,6 @@ type Compiling uni m =
     , MonadError (CompileError uni) m
     , MonadQuote m
     , MonadReader (CompileContext uni) m
-    , MonadState CompileState m
     , MonadDefs LexName uni () m
     , PLC.DefaultUni PLC.<: uni
     , PLC.GShow uni, PLC.GEq uni)

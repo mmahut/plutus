@@ -59,25 +59,26 @@ floatTerm = runIfOpts letFloat
             means <- asks _ccBuiltinMeanings
             pure $ LetFloat.floatTerm means t
 
--- | Perform typechecking of a PIR Term.
+-- | Typecheck a PIR Term iff the context demands it.
 -- Note: assumes globally unique names
-typeCheckTerm :: Compiling m e uni b => Term TyName Name uni (Provenance b) -> m ()
-typeCheckTerm t = do
-    tcconfig <- asks _ccTypeCheckConfig
-    void . runTypeCheckM tcconfig $ inferTypeM t
+mtypeCheckTerm :: Compiling m e uni b => Term TyName Name uni (Provenance b) -> m ()
+mtypeCheckTerm t = do
+    mtcconfig <- asks _ccTypeCheckConfig
+    case mtcconfig of
+        Just tcconfig -> void . runTypeCheckM tcconfig $ inferTypeM t
+        Nothing       -> pure ()
 
 -- | The 1st half of the PIR compiler pipeline up to floating/merging the lets.
 -- We stop momentarily here to give a chance to the tx-plugin
 -- to dump a "readable" version of pir (i.e. floated).
 compileToReadable :: Compiling m e uni a
-                  => Bool
-                  -> Term TyName Name uni a
+                  => Term TyName Name uni a
                   -> m (Term TyName Name uni (Provenance a))
-compileToReadable doTypecheck =
+compileToReadable =
     (pure . original)
     -- We need globally unique names for typechecking, floating, and compiling non-strict bindings
     >=> PLC.rename
-    >=> through (when doTypecheck . typeCheckTerm)
+    >=> through mtypeCheckTerm
     >=> simplifyTerm
     >=> (pure . ThunkRec.thunkRecursions)
     >=> floatTerm
@@ -98,6 +99,5 @@ compileReadableToPlc =
 
 --- | Compile a 'Term' into a PLC Term. Note: the result *does* have globally unique names.
 compileTerm :: Compiling m e uni a
-            => Bool -- ^ flag to run PIR-typecheking or not (for debuggin purposes)
-            -> Term TyName Name uni a -> m (PLCTerm uni a)
-compileTerm doTypecheck  = compileToReadable doTypecheck >=> compileReadableToPlc
+            => Term TyName Name uni a -> m (PLCTerm uni a)
+compileTerm = compileToReadable >=> compileReadableToPlc

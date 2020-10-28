@@ -1,8 +1,8 @@
-{-# LANGUAGE ConstraintKinds  #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE TypeOperators    #-}
-{-# LANGUAGE ScopedTypeVariables    #-}
-{-# LANGUAGE PartialTypeSignatures    #-}
+{-# LANGUAGE ConstraintKinds       #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE PartialTypeSignatures #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeOperators         #-}
 module Language.PlutusTx.Lift (
     makeLift,
     safeLift,
@@ -16,33 +16,33 @@ module Language.PlutusTx.Lift (
     typeCode) where
 
 import           Language.PlutusTx.Code
-import           Language.PlutusTx.Lift.Class                  (makeLift)
-import qualified Language.PlutusTx.Lift.Class                  as Lift
-import           Language.PlutusTx.Lift.Instances              ()
+import           Language.PlutusTx.Lift.Class             (makeLift)
+import qualified Language.PlutusTx.Lift.Class             as Lift
+import           Language.PlutusTx.Lift.Instances         ()
 
+import           Data.Bifunctor
 import           Language.PlutusIR
+import qualified Language.PlutusIR                        as PIR
 import           Language.PlutusIR.Compiler
-import qualified           Language.PlutusIR.Error as PIR
 import           Language.PlutusIR.Compiler.Definitions
-import qualified Language.PlutusIR                       as PIR
-import qualified Language.PlutusIR.MkPir                       as PIR
-import Data.Bifunctor
+import qualified Language.PlutusIR.Error                  as PIR
+import qualified Language.PlutusIR.MkPir                  as PIR
 
-import qualified Language.PlutusCore                           as PLC
-import qualified Language.PlutusCore.Constant.Dynamic          as PLC
-import           Language.PlutusCore.Pretty                    (PrettyConst)
+import qualified Language.PlutusCore                      as PLC
+import qualified Language.PlutusCore.Constant.Dynamic     as PLC
+import           Language.PlutusCore.Pretty               (PrettyConst)
 import           Language.PlutusCore.Quote
-import qualified Language.PlutusCore.StdLib.Data.Function      as PLC
+import qualified Language.PlutusCore.StdLib.Data.Function as PLC
 
-import qualified Language.UntypedPlutusCore                    as UPLC
+import qualified Language.UntypedPlutusCore               as UPLC
 
 import           Control.Exception
-import           Control.Monad.Except                          hiding (lift)
-import           Control.Monad.Reader                          hiding (lift)
-import Control.Lens hiding (lifted)
+import           Control.Lens                             hiding (lifted)
+import           Control.Monad.Except                     hiding (lift)
+import           Control.Monad.Reader                     hiding (lift)
 
 import           Data.Proxy
-import qualified Data.Typeable                                 as GHC
+import qualified Data.Typeable                            as GHC
 
 type Throwable uni = (PLC.GShow uni, PLC.GEq uni, PLC.DefaultUni PLC.<: uni, PLC.Closed uni, uni `PLC.Everywhere` PrettyConst, GHC.Typeable uni)
 
@@ -58,7 +58,7 @@ safeLift
 safeLift x = do
     lifted <- liftQuote $ runDefT () $ Lift.lift x
     -- note: we typecheck&compile the plutus-tx term inside an empty builtin context (PLC.defConfig)
-    compiled <- flip runReaderT defaultCompilationCtx $ compileTerm True lifted
+    compiled <- flip runReaderT defaultCompilationCtx $ compileTerm lifted
     pure $ void $ UPLC.erase compiled
 
 -- | Get a Plutus Core program corresponding to the given value.
@@ -137,7 +137,7 @@ typeCheckAgainst p plcTerm = do
         pure $ TyInst () PLC.idFun ty
     let applied = Apply () idFun term
     -- FIXME: we need to pass the real dynamic builtin tcconfig map in compileterm
-    compiled <- flip runReaderT defaultCompilationCtx $ compileTerm True applied
+    compiled <- flip runReaderT defaultCompilationCtx $ compileTerm applied
     -- PLC errors are parameterized over PLC.Terms, whereas PIR errors over PIR.Terms and as such, these prism errors cannot be unified.
     -- We instead run the ExceptT, collect any PLC error and explicitly lift into a PIR error by wrapping with PIR._PLCError
     plcConcrete <-

@@ -1,11 +1,11 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE FlexibleInstances      #-}
-{-# LANGUAGE MultiParamTypeClasses  #-}
-{-# LANGUAGE UndecidableInstances   #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeOperators          #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE UndecidableInstances  #-}
 module TestLib where
 
 import           Common
@@ -13,12 +13,12 @@ import           PlcTestUtils
 import           PlutusPrelude
 
 import           Control.Exception
+import           Control.Lens                 hiding (op, transform)
 import           Control.Monad.Except
-import           Control.Monad.Reader         as Reader
 import           Control.Monad.Morph
-import Control.Lens hiding (transform, op)
+import           Control.Monad.Reader         as Reader
 
-import qualified Language.PlutusCore as PLC
+import qualified Language.PlutusCore          as PLC
 import qualified Language.PlutusCore.DeBruijn as PLC
 import           Language.PlutusCore.Name
 import           Language.PlutusCore.Pretty
@@ -27,7 +27,7 @@ import           Language.PlutusIR            as PIR
 import           Language.PlutusIR.Compiler   as PIR
 import           Language.PlutusIR.Parser     as Parser
 import           Language.PlutusIR.TypeCheck
-import qualified Language.UntypedPlutusCore as UPLC
+import qualified Language.UntypedPlutusCore   as UPLC
 import           System.FilePath              (joinPath, (</>))
 import           Text.Megaparsec.Pos
 
@@ -58,14 +58,19 @@ compileAndMaybeTypecheck
     => Bool
     -> Term TyName Name uni a
     -> Except (PIR.Error uni (PIR.Provenance a)) (PLC.Term TyName Name uni (PIR.Provenance a))
-compileAndMaybeTypecheck doTypecheck pir = flip runReaderT defaultCompilationCtx $ runQuoteT $ do
-    compiled <- compileTerm doTypecheck pir
+compileAndMaybeTypecheck doTypecheck pir = flip runReaderT pirCtx $ runQuoteT $ do
+    compiled <- compileTerm pir
     when doTypecheck $ do
         -- PLC errors are parameterized over PLC.Terms, whereas PIR errors over PIR.Terms and as such, these prism errors cannot be unified.
         -- We instead run the ExceptT, collect any PLC error and explicitly lift into a PIR error by wrapping with PIR._PLCError
         plcConcrete <- runExceptT $ void $ PLC.inferType PLC.defConfig compiled
         liftEither $ first (view (re _PLCError)) plcConcrete
     pure compiled
+
+    where
+      pirCtx = defaultCompilationCtx & if not doTypecheck
+                                       then set ccTypeCheckConfig Nothing
+                                       else id
 
 withGoldenFileM :: String -> (T.Text -> IO T.Text) -> TestNested
 withGoldenFileM name op = do
