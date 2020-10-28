@@ -20,6 +20,7 @@ module Language.Plutus.Contract.Test(
     , TracePredicate
     , ContractConstraints
     , Language.Plutus.Contract.Test.not
+    , (.&&.)
     -- * Assertions
     , endpointAvailable
     , interestingAddress
@@ -48,6 +49,7 @@ module Language.Plutus.Contract.Test(
     , maxSlot
     ) where
 
+import Control.Applicative (liftA2)
 import           Control.Lens                                    (at, (^.), filtered, preview, makeLenses)
 import           Control.Monad                                   (guard, unless)
 import Control.Foldl (FoldM)
@@ -107,17 +109,10 @@ import qualified Streaming as S
 
 type TracePredicate = FoldM (Eff '[Reader InitialDistribution, Error EmulatorFoldErr, Writer (Doc Void)]) EmulatorEvent Bool
 
--- instance JoinSemiLattice TracePredicate where
---     l \/ r = liftA2 (\/) l r
--- instance MeetSemiLattice TracePredicate where
---     l /\ r = liftA2 (/\) l r
+infixl 3 .&&.
 
--- instance BoundedJoinSemiLattice TracePredicate where
---     bottom = pure bottom
-
--- instance BoundedMeetSemiLattice TracePredicate where
---     top = pure top
-
+(.&&.) :: TracePredicate -> TracePredicate -> TracePredicate
+(.&&.) = liftA2 (&&)
 
 not :: TracePredicate -> TracePredicate
 not = fmap Prelude.not
@@ -140,8 +135,8 @@ defaultCheckOptions =
 
 type TestEffects = '[Reader InitialDistribution, Error EmulatorFoldErr, Writer (Doc Void)]
 
-checkPredicate
-    :: CheckOptions -- ^ Options to use
+checkPredicate ::
+    CheckOptions -- ^ Options to use
     -> String -- ^ Descriptive name of the test
     -> TracePredicate -- ^ The predicate to check 
     -> Eff '[Trace Emulator] ()

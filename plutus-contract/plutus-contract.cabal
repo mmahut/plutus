@@ -98,6 +98,7 @@ library
         Plutus.Trace.Playground
         Plutus.Trace.Scheduler
         Plutus.Trace.Types
+        Plutus.Trace.Tag
     hs-source-dirs: src
     build-depends:
         plutus-ledger -any,

@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
@@ -17,9 +18,9 @@ import           Data.Foldable                 (traverse_)
 import           Wallet.Emulator.Chain         (ChainControlEffect, ChainEffect, getCurrentSlot, processBlock)
 import           Wallet.Emulator.MultiAgent    (MultiAgentEffect, walletControlAction)
 
-import qualified Debug.Trace                   as Trace
+import Data.String (IsString(..))
 import           Plutus.Trace.Emulator.Types   (EmulatorMessage (..))
-import           Plutus.Trace.Scheduler        (Priority (..), SysCall (..), SystemCall, ThreadType (..), fork,
+import           Plutus.Trace.Scheduler        (Priority (..), SysCall (..), SystemCall, Tag, fork,
                                                 mkSysCall, sleep)
 import           Wallet.Emulator.ChainIndex    (chainIndexNotify)
 import           Wallet.Emulator.NodeClient    (ChainClientNotification (..), clientNotify)
@@ -38,9 +39,15 @@ launchSystemThreads :: forall effs.
 launchSystemThreads wallets = do
     _ <- sleep @effs @EmulatorMessage Sleeping
     -- 1. Threads for updating the agents' states
-    traverse_ (fork @effs @EmulatorMessage System Low . agentThread @effs) wallets
+    traverse_ (\w -> fork @effs @EmulatorMessage (agentTag w) Low $ agentThread @effs w) wallets
     -- 2. Block maker thread
-    void $ fork @effs @EmulatorMessage System High (blockMaker @effs)
+    void $ fork @effs @EmulatorMessage blockMakerTag High (blockMaker @effs)
+
+agentTag :: Wallet -> Tag
+agentTag (Wallet i) = fromString ("W " <> show i)
+
+blockMakerTag :: Tag
+blockMakerTag = "block maker"
 
 blockMaker :: forall effs effs2.
     ( Member ChainControlEffect effs2

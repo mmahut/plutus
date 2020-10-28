@@ -34,6 +34,7 @@ import           Control.Monad.Freer.Coroutine
 import           Control.Monad.Freer.Extras
 import           Control.Monad.Freer.Log       (LogMsg)
 import           Plutus.Trace.Scheduler
+import Data.Text (Text)
 
 class TraceBackend a where
     type LocalAction a :: * -> *

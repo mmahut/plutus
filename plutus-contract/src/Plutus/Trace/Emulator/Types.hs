@@ -59,7 +59,7 @@ import qualified Data.Aeson                         as JSON
 import           Data.Map                           (Map)
 import Data.String (IsString)
 import           Data.Proxy                         (Proxy (..))
-import           Data.Text.Prettyprint.Doc (Pretty(..), (<+>), colon, braces, viaShow, fillSep)
+import           Data.Text.Prettyprint.Doc (Pretty(..), (<+>), colon, braces, viaShow, fillSep, vsep)
 import qualified Data.Row.Internal                  as V
 import           GHC.Generics                       (Generic)
 import Data.Text (Text)
@@ -123,7 +123,7 @@ data ContractHandle s e =
         }
 
 data EmulatorLocal r where
-    ActivateContract :: (ContractConstraints s, HasBlockchainActions s) => ContractInstanceTag -> Contract s e () -> EmulatorLocal (ContractHandle s e)
+    ActivateContract :: (ContractConstraints s, HasBlockchainActions s) => Contract s e () -> ContractInstanceTag -> EmulatorLocal (ContractHandle s e)
     CallEndpointEm :: forall l ep s e. (ContractConstraints s, HasEndpoint l ep s) => Proxy l -> ContractHandle s e -> ep -> EmulatorLocal ()
     PayToWallet :: Interval Slot -> Wallet -> Value -> EmulatorLocal TxId
     SetSigningProcess :: SigningProcess -> EmulatorLocal ()
@@ -140,8 +140,8 @@ instance TraceBackend Emulator where
 
 type EmulatorTrace a = Eff '[Trace Emulator] a
 
-activateContract :: forall s e. (HasBlockchainActions s, ContractConstraints s) => Wallet -> ContractInstanceTag -> Contract s e () -> EmulatorTrace (ContractHandle s e)
-activateContract wallet tag = send @(Trace Emulator) . RunLocal wallet . ActivateContract tag
+activateContract :: forall s e. (HasBlockchainActions s, ContractConstraints s) => Wallet -> Contract s e () -> ContractInstanceTag -> EmulatorTrace (ContractHandle s e)
+activateContract wallet contract = send @(Trace Emulator) . RunLocal wallet . ActivateContract contract
 
 callEndpoint :: forall l ep s e. (ContractConstraints s, HasEndpoint l ep s) => Wallet -> ContractHandle s e -> ep -> EmulatorTrace ()
 callEndpoint wallet hdl = send @(Trace Emulator) . RunLocal wallet . CallEndpointEm (Proxy @l) hdl
@@ -222,10 +222,7 @@ data ContractInstanceLog =
 
 instance Pretty ContractInstanceLog where
     pretty ContractInstanceLog{_cilMessage, _cilId, _cilTag} =
-        pretty _cilId
-        <+> braces (pretty _cilTag)
-        <> colon 
-        <+> pretty _cilMessage
+        vsep [pretty _cilId <+> braces (pretty _cilTag) <> colon, pretty _cilMessage]
 
 makeLenses ''ContractInstanceLog
 makePrisms ''ContractInstanceMsg

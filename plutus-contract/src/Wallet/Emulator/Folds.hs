@@ -47,6 +47,7 @@ import qualified Data.Aeson as JSON
 import qualified Data.Aeson.Types                              as JSON
 import           Language.Plutus.Contract.Resumable (Response, Request)
 import Wallet.Emulator.Chain (_TxnValidationFail, _TxnValidate)
+import qualified Language.Plutus.Contract.Resumable            as State
 import Language.Plutus.Contract.Types (ResumableResult(..))
 import qualified Ledger.AddressMap as AM
 import Ledger.AddressMap (UtxoMap)
@@ -99,9 +100,7 @@ instanceRequests ::
     -> ContractInstanceTag
     -> EmulatorEventFold [Request (Handlers s)]
 instanceRequests con = fmap g . instanceState con where
-    g s = case instHandlersHistory s of
-            Empty -> []
-            _ :|> x -> x
+    g = State.unRequests . wcsRequests . instContractState
 
 -- | The reponses received by the contract instance
 instanceResponses :: 

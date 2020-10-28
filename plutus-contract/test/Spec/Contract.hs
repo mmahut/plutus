@@ -1,3 +1,5 @@
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE OverloadedStrings     #-}
@@ -9,8 +11,11 @@
 {-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 module Spec.Contract(tests) where
 
-import           Control.Monad                                 (void)
+import Control.Lens
+import           Control.Monad                                 (void, forever)
+import Control.Monad.Freer (Eff)
 import           Control.Monad.Error.Lens
+import           Control.Monad.Freer.Log (LogLevel(..))
 import           Control.Monad.Except                          (catchError, throwError)
 import           Test.Tasty
 
@@ -19,13 +24,15 @@ import           Language.Plutus.Contract.Test
 import           Language.Plutus.Contract.Util                 (loopM)
 import qualified Language.PlutusTx                             as PlutusTx
 import           Language.PlutusTx.Lattice
-import           Ledger                                        (Address)
+import           Ledger                                        (Address, Slot)
 import qualified Ledger                                        as Ledger
 import qualified Ledger.Ada                                    as Ada
 import qualified Ledger.Constraints                            as Constraints
 import qualified Ledger.Crypto                                 as Crypto
 import           Prelude                                       hiding (not)
-import Plutus.Trace.Emulator (callEndpoint, activateContract, ContractInstanceTag)
+import Plutus.Trace.Emulator (callEndpoint, activateContract, ContractInstanceTag, Emulator)
+import Plutus.Trace (Trace)
+import qualified Plutus.Trace as Trace
 import qualified Wallet.Emulator                               as EM
 
 import qualified Language.Plutus.Contract.Effects.AwaitSlot    as AwaitSlot
@@ -35,74 +42,64 @@ import           Language.Plutus.Contract.Trace.RequestHandler (maybeToHandler)
 
 tests :: TestTree
 tests =
-    let cp = checkPredicate defaultCheckOptions
+    let run :: Slot -> String -> TracePredicate -> Eff '[Trace Emulator] () -> _
+        run sl = checkPredicate (defaultCheckOptions & maxSlot .~ sl & minLogLevel .~ Debug)
+
+        check :: Slot -> String -> Contract Schema ContractError () -> _ -> _
+        check sl nm contract pred = run sl nm (pred contract) (void $ activateContract w1 contract tag)
+                
         tag :: ContractInstanceTag
         tag = "instance 1"
-        c1 :: Contract Schema ContractError ()
-        c1 = void $ awaitSlot 10
-        c2 :: Contract Schema ContractError ()
-        c2 = void $ selectEither (awaitSlot 10) (awaitSlot 5)
-        c3 :: Contract Schema ContractError ()
-        c3 = void $ awaitSlot 10 `Con.until` 5
-        c4 :: Contract Schema ContractError ()
-        c4 = void $ Con.both (awaitSlot 10) (awaitSlot 20)
 
     in
     testGroup "contracts"
-        [ cp "awaitSlot"
-            (waitingForSlot c1 tag 10)
-            (void $ activateContract w1 tag c1)
+        [ check 1 "awaitSlot" (void $ awaitSlot 10) $ \con ->
+            (waitingForSlot con tag 10)
 
-        , cp "selectEither"
-            (waitingForSlot c2 tag 5)
-            (void $ activateContract w1 tag c2)    
+        , check 1 "selectEither" (void $ selectEither (awaitSlot 10) (awaitSlot 5)) $ \con ->
+            (waitingForSlot con tag 5)
 
-        , cp "until"
-            (waitingForSlot c3 tag 5)
-            (void $ activateContract w1 tag c3)
+        , check 1 "until" (void $ void $ awaitSlot 10 `Con.until` 5) $ \con ->
+            (waitingForSlot con tag 5)
 
-        , cp "both"
-            (waitingForSlot c4 tag 10)
-            (void $ activateContract w1 tag c4)
+        , check 1 "both" (void $ Con.both (awaitSlot 10) (awaitSlot 20)) $ \con ->
+            (waitingForSlot con tag 10)
 
-        -- , cp "both (2)"
-        --     (void $ Con.both (awaitSlot 10) (awaitSlot 20))
-        --     (waitingForSlot w1 20)
-            -- $ void $ respondToRequest w1 (maybeToHandler $ \_ -> Just $ AwaitSlot.event 10)
+        , check 1 "both (2)" (void $ Con.both (awaitSlot 10) (awaitSlot 20)) $ \con ->
+            (waitingForSlot con tag 20)
 
-        -- , cp "fundsAtAddressGt"
-        --     (void $ fundsAtAddressGt someAddress (Ada.adaValueOf 10))
-        --     (queryingUtxoAt w1 someAddress)
-        --     (notifySlot w1)
+        -- , check 3 "fundsAtAddressGt" (void $ fundsAtAddressGt someAddress (Ada.adaValueOf 10)) $ \con ->
+            -- (queryingUtxoAt con tag someAddress)
 
-        -- , cp "watchAddressUntil"
-        --     (void $ watchAddressUntil someAddress 5)
-        --     (waitingForSlot w1 5)
-        --     (pure ())
+        , check 1 "watchAddressUntil" (void $ watchAddressUntil someAddress 5) $ \con ->
+            (waitingForSlot con tag 5)
 
-        -- , cp "endpoint"
-        --     (endpoint @"ep" @())
-        --     (endpointAvailable @"ep" w1)
-        --     $ pure ()
+        , check 1 "endpoint" (endpoint @"ep") $ \con ->
+            (endpointAvailable @"ep" con tag)
 
-        -- , cp "forever"
-        --     (let go = endpoint @"ep" @() >> go in go)
-        --     (endpointAvailable @"ep" w1)
-        --     (callEndpoint @"ep" w1 ())
+        , check 1 "forever" (forever $ endpoint @"ep") $ \con ->
+            (endpointAvailable @"ep" con tag)
 
-        -- , cp "alternative"
-        --     (let
-        --         oneTwo = endpoint @"1" >> endpoint @"2" >> endpoint @"4"
-        --         oneThree = endpoint @"1" >> endpoint @"3" >> endpoint @"4"
-        --      in oneTwo `select` oneThree)
-        --     (endpointAvailable @"3" w1
-        --     /\ not (endpointAvailable @"2" w1))
-        --     (callEndpoint @"1" w1 1)
+        , let
+            oneTwo :: Contract Schema ContractError Int = endpoint @"1" >> endpoint @"2" >> endpoint @"4"
+            oneThree :: Contract Schema ContractError Int = endpoint @"1" >> endpoint @"3" >> endpoint @"4"
+            con = void (oneTwo `select` oneThree)
+          in
+            run 1 "alternative"
+                (endpointAvailable @"3" con tag .&&. not (endpointAvailable @"2" con tag))
+                $ do
+                    hdl <- activateContract w1 con tag
+                    callEndpoint @"1" w1 hdl 1
 
-        -- , cp "call endpoint (1)"
-        --     (void $ endpoint @"1" @Int >> endpoint @"2" @Int)
-        --     (endpointAvailable @"1" w1)
-        --     $ pure ()
+        , let theContract :: Contract Schema ContractError () = void $ endpoint @"1" @Int >> endpoint @"2" @Int
+          in run 1 "call endpoint (1)"
+                (endpointAvailable @"1" theContract tag)
+                (void $ activateContract w1 theContract tag)
+
+        , let theContract :: Contract Schema ContractError () = void $ endpoint @"1" @Int >> endpoint @"2" @Int
+          in run 1 "call endpoint (2)"
+                (endpointAvailable @"2" theContract tag .&&. not (endpointAvailable @"1" theContract tag))
+                (activateContract w1 theContract tag >>= \hdl -> callEndpoint @"1" w1 hdl 1)
 
         -- , cp "call endpoint (2)"
         --     (void $ endpoint @"1" @Int >> endpoint @"2" @Int)

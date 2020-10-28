@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
@@ -71,7 +72,7 @@ import Ledger.Tx (txId)
 import           Ledger.Slot                                     (Slot (..))
 import           Ledger.Value                                    (Value)
 import           Plutus.Trace.Scheduler                          (Priority (..), SysCall (..), SystemCall,
-                                                                  ThreadType (..), fork, mkSysCall, runThreads, sleep)
+                                                                  Tag, fork, mkSysCall, runThreads, sleep)
 import           Wallet.API                                      (WalletAPIError, defaultSlotRange, payToPublicKey)
 import qualified Wallet.Emulator                                 as EM
 import           Wallet.Emulator.Chain                           (ChainControlEffect, ChainEffect, getCurrentSlot)
@@ -254,7 +255,7 @@ emRunLocal :: forall b effs.
     -> EmulatorLocal b
     -> Eff (Yield (SystemCall effs EmulatorMessage) (Maybe EmulatorMessage) ': effs) b
 emRunLocal wllt = \case
-    ActivateContract tag con -> activate wllt tag con
+    ActivateContract tag con -> activate wllt con tag
     CallEndpointEm p h v -> callEndpoint p h v
     PayToWallet range target vl -> payToWallet range wllt target vl
     SetSigningProcess sp -> setSigningProcess wllt sp
@@ -276,8 +277,11 @@ setSigningProcess :: forall effs.
     => Wallet
     -> SigningProcess
     -> Eff (Yield (SystemCall effs EmulatorMessage) (Maybe EmulatorMessage) ': effs) ()
-setSigningProcess wllt sp = void $ fork @effs @EmulatorMessage System High st
+setSigningProcess wllt sp = void $ fork @effs @EmulatorMessage setSigningProcessTag High st
     where st = walletControlAction wllt $ W.setSigningProcess sp
+
+setSigningProcessTag :: Tag
+setSigningProcessTag = "set signing process"
 
 activate :: forall s e effs.
     ( ContractConstraints s
@@ -295,24 +299,32 @@ activate :: forall s e effs.
 activate wllt tag con = do
     i <- nextId
     let handle = ContractHandle{chContract=con, chInstanceId = i, chInstanceTag = tag}
-    _ <- fork @effs @EmulatorMessage System High (runReader wllt $ interpret (mapLog InstanceEvent) $ reinterpret (mapLog InstanceEvent) $ contractThread handle)
+    _ <- fork @effs @EmulatorMessage runningContractInstance High (runReader wllt $ interpret (mapLog InstanceEvent) $ reinterpret (mapLog InstanceEvent) $ contractThread handle)
     pure handle
+
+runningContractInstance :: Tag
+runningContractInstance = "contract instance"
 
 callEndpoint :: forall s l e ep effs.
     ( ContractConstraints s
     , HasEndpoint l ep s
     , Member (State EmulatorThreads) effs
     , Member (Error ContractInstanceError) effs
+    , Member (LogMsg EmulatorEvent') effs
     )
     => Proxy l
     -> ContractHandle s e
     -> ep
     -> Eff (Yield (SystemCall effs EmulatorMessage) (Maybe EmulatorMessage) ': effs) ()
 callEndpoint _ ContractHandle{chInstanceId} ep = do
-    threadId <- getThread chInstanceId
     let epJson = JSON.toJSON $ Endpoint.event @l @ep @s ep
-        thr = void $ mkSysCall @effs @EmulatorMessage High (Message threadId $ EndpointCall epJson)
-    void $ fork @effs @EmulatorMessage System High thr
+        thr = do
+            threadId <- getThread chInstanceId
+            void $ mkSysCall @effs @EmulatorMessage High (Message threadId $ EndpointCall epJson)
+    void $ fork @effs @EmulatorMessage callEndpointTag Low thr
+
+callEndpointTag :: Tag
+callEndpointTag = "call endpoint"
 
 emRunGlobal :: forall b effs.
     Member (State EmulatorState) effs
