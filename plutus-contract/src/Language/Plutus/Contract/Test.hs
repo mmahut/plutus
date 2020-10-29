@@ -99,7 +99,7 @@ import Wallet.Emulator.Chain (_SlotAdd)
 import           Language.Plutus.Contract.Schema                 (Event (..), Handlers (..), Input, Output)
 import           Language.Plutus.Contract.Trace                  as X
 import Plutus.Trace.Emulator (EmulatorConfig(..))
-import           Plutus.Trace                                    (Emulator, Trace, defaultEmulatorConfig)
+import           Plutus.Trace                                    (Emulator, Trace, defaultEmulatorConfig, waitNSlots)
 import           Plutus.Trace.Emulator                           (runEmulatorStream)
 import qualified Wallet.Emulator.Folds as Folds
 import Wallet.Emulator.Folds (EmulatorFoldErr, postMapM, Outcome(..))
@@ -144,10 +144,14 @@ checkPredicate ::
 checkPredicate CheckOptions{_minLogLevel, _maxSlot} nm predicate action = HUnit.testCaseSteps nm $ \step -> do
     let cfg = defaultEmulatorConfig
         dist = _initialDistribution cfg
+
+        -- add a wait action to the beginning to ensure that the
+        -- initial transaction gets validated
+        action' = waitNSlots 1 >> action
         theStream :: forall effs. S.Stream (S.Of (LogMessage EmulatorEvent)) (Eff effs) ()
         theStream = 
             S.takeWhile (maybe True (\sl -> sl <= _maxSlot) . preview (logMessageContent . eteEvent . chainEvent . _SlotAdd))
-            $ runEmulatorStream cfg action
+            $ runEmulatorStream cfg action'
         theFold :: FoldM (Eff TestEffects) (LogMessage EmulatorEvent) Bool
         theFold = L.premapM (pure . _logMessageContent) predicate
         consumeStream :: forall a. S.Stream (S.Of (LogMessage EmulatorEvent)) (Eff TestEffects) a -> Eff TestEffects (S.Of Bool a)
