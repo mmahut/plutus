@@ -321,6 +321,5 @@ logNewMessages :: forall s e a effs.
 logNewMessages oldMessages = do
     newState <- get @(ContractInstanceState s e a)
     let contractLogs = wcsLogs $ instContractState newState
-        -- oldContractLogs = wcsLogs $ instContractState oldState
         newContractLogs = Seq.drop (Seq.length oldMessages) contractLogs
     traverse_ (send . LMessage . fmap ContractLog) newContractLogs
