@@ -23,8 +23,11 @@ module Wallet.Emulator.Folds (
     -- * Folds for individual wallets (emulated agents)
     , walletWatchingAddress
     , walletFunds
+    -- * Annotated blockchain (used in Playground)
+    , annotatedBlockchain
     -- * Etc.
     , preMapMaybeM
+    , preMapMaybe
     , postMapM
     ) where
 
@@ -55,6 +58,8 @@ import Ledger.AddressMap (UtxoMap)
 import Wallet.Emulator.MultiAgent (EmulatorEvent, instanceEvent, eteEvent, chainEvent, chainIndexEvent)
 import Wallet.Emulator.Wallet (Wallet, walletAddress)
 import Wallet.Emulator.ChainIndex (_AddressStartWatching)
+import Wallet.Rollup.Types (AnnotatedTx)
+import qualified Wallet.Rollup as Rollup
 
 -- | A fold over emulator events that can fail with 'EmulatorFoldErr'
 type EmulatorEventFold a = forall effs. Member (Error EmulatorFoldErr) effs => FoldM (Eff effs) EmulatorEvent a
@@ -161,6 +166,12 @@ walletWatchingAddress :: Monad m => Wallet -> Address -> FoldM m EmulatorEvent B
 walletWatchingAddress wllt addr = 
     preMapMaybeM (return . preview (eteEvent . chainIndexEvent wllt . _AddressStartWatching))
     $ L.generalize $ L.any ((==) addr)
+
+-- | Annotate the transactions that were validated by the node
+annotatedBlockchain :: Fold EmulatorEvent [[AnnotatedTx]]
+annotatedBlockchain = 
+    preMapMaybe (preview (eteEvent . chainEvent))
+    $ Fold Rollup.handleChainEvent Rollup.initialState Rollup.getAnnotatedTransactions
 
 -- | An effectful 'Data.Maybe.mapMaybe' for 'FoldM'.
 preMapMaybeM ::

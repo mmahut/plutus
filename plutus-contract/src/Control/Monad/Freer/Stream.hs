@@ -12,8 +12,8 @@ import Streaming (Stream)
 import Streaming.Prelude (Of)
 import qualified Streaming.Prelude as S
 
--- | Turn the @Yield a ()@ effect into a pull-based stream
---   of events.
+-- | Turn the @Yield e ()@ effect into a pull-based stream
+--   of @e@ events.
 runStream :: forall e a effs.
     Eff (Yield e () ': effs) a
     -> Stream (Of e) (Eff effs) a
