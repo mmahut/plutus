@@ -263,7 +263,7 @@ tx contract inst flt nm =
             pure False
 
 walletWatchingAddress :: Wallet -> Address -> TracePredicate
-walletWatchingAddress w addr = flip postMapM (Folds.walletWatchingAddress w addr) $ \r -> do
+walletWatchingAddress w addr = flip postMapM (L.generalize $ Folds.walletWatchingAddress w addr) $ \r -> do
     unless r $ do
         tell @(Doc Void) $ "Wallet" <+> pretty w <+> "not watching address" <+> pretty addr
     pure r
@@ -293,7 +293,7 @@ assertEvents contract inst pr nm =
 -- | Check that the funds at an address meet some condition.
 valueAtAddress :: Address -> (Value -> Bool) -> TracePredicate
 valueAtAddress address check =
-    flip postMapM (Folds.valueAtAddress address) $ \vl -> do
+    flip postMapM (L.generalize $ Folds.valueAtAddress address) $ \vl -> do
         let result = check vl
         unless result $ do
             tell @(Doc Void) ("Funds at address" <+> pretty address <+> "were" <> pretty vl)
@@ -430,7 +430,7 @@ assertOutcome contract inst p nm =
 
 walletFundsChange :: Wallet -> Value -> TracePredicate
 walletFundsChange w dlt = 
-    flip postMapM (Folds.walletFunds w) $ \finalValue -> do
+    flip postMapM (L.generalize $ Folds.walletFunds w) $ \finalValue -> do
         initialDist <- ask @InitialDistribution
         let initialValue = fold (initialDist ^. at w)
             result = initialValue P.+ dlt == finalValue
@@ -444,7 +444,7 @@ walletFundsChange w dlt =
 --   transactions that failed meet the predicate.
 assertFailedTransaction :: (Tx -> ValidationError -> Bool) -> TracePredicate
 assertFailedTransaction predicate =
-    flip postMapM Folds.failedTransactions $ \case
+    flip postMapM (L.generalize Folds.failedTransactions) $ \case
         [] -> do
             tell @(Doc Void) $ "No transactions failed to validate."
             pure False
@@ -453,7 +453,7 @@ assertFailedTransaction predicate =
 -- | Assert that no transaction failed to validate.
 assertNoFailedTransactions :: TracePredicate
 assertNoFailedTransactions = 
-    flip postMapM Folds.failedTransactions $ \case
+    flip postMapM (L.generalize Folds.failedTransactions) $ \case
         [] -> pure True
         xs -> do
             tell @(Doc Void) $ vsep ("Transactions failed to validate:" : fmap pretty xs)
@@ -463,7 +463,7 @@ assertInstanceLog ::
     ContractInstanceTag
     -> ([ContractInstanceLog] -> Bool)
     -> TracePredicate
-assertInstanceLog tag pred = flip postMapM (Folds.instanceLog tag) $ \lg -> do
-    let result = pred lg
+assertInstanceLog tag pred' = flip postMapM (L.generalize $ Folds.instanceLog tag) $ \lg -> do
+    let result = pred' lg
     unless result (tell @(Doc Void) $ vsep ("Contract instance log failed to validate:" : fmap pretty lg))
     pure result

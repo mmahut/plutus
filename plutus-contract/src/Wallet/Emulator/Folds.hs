@@ -1,3 +1,4 @@
+{-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -7,6 +8,7 @@
 -}
 module Wallet.Emulator.Folds (
     EmulatorEventFold
+    , EmulatorEventFoldM
     , EmulatorFoldErr(..)
     -- * Folds for contract instances
     , instanceState
@@ -36,19 +38,16 @@ import Control.Lens hiding (Empty, Fold)
 import Control.Monad.Freer
 import Control.Monad ((>=>))
 import Data.Foldable (toList)
-import Ledger.TxId (TxId)
 import Control.Monad.Freer.Error
 import Ledger.Tx (Address, Tx, TxOutTx(..), TxOut(..))
 import Ledger.Index (ValidationError)
 import Language.Plutus.Contract (Contract)
 import qualified Control.Foldl as L
 import Ledger.Value (Value)
-import Data.Sequence (Seq(..))
-import Plutus.Trace.Emulator.Types (ContractInstanceTag, ContractInstanceMsg, cilMessage, cilTag, _HandledRequest, ContractConstraints, ContractInstanceLog)
+import Plutus.Trace.Emulator.Types (ContractInstanceTag, cilMessage, cilTag, _HandledRequest, ContractConstraints, ContractInstanceLog)
 import           Language.Plutus.Contract.Schema               (Event (..), Handlers)
-import Plutus.Trace.Emulator.ContractInstance (ContractInstanceState, addEventInstanceState, emptyInstanceState, instHandlersHistory, instEvents, instContractState)
+import Plutus.Trace.Emulator.ContractInstance (ContractInstanceState, addEventInstanceState, emptyInstanceState, instEvents, instContractState)
 import qualified Data.Aeson as JSON
-import qualified Data.Aeson.Types                              as JSON
 import           Language.Plutus.Contract.Resumable (Response, Request)
 import Wallet.Emulator.Chain (_TxnValidationFail, _TxnValidate)
 import qualified Language.Plutus.Contract.Resumable            as State
@@ -61,22 +60,18 @@ import Wallet.Emulator.ChainIndex (_AddressStartWatching)
 import Wallet.Rollup.Types (AnnotatedTx)
 import qualified Wallet.Rollup as Rollup
 
+type EmulatorEventFold a = Fold EmulatorEvent a
+
 -- | A fold over emulator events that can fail with 'EmulatorFoldErr'
-type EmulatorEventFold a = forall effs. Member (Error EmulatorFoldErr) effs => FoldM (Eff effs) EmulatorEvent a
+type EmulatorEventFoldM a = forall effs. Member (Error EmulatorFoldErr) effs => FoldM (Eff effs) EmulatorEvent a
 
 -- | Transactions that failed to validate
-failedTransactions ::
-    EmulatorEventFold [(Tx, ValidationError)]
-failedTransactions =
-    preMapMaybeM (return . preview (eteEvent . chainEvent . _TxnValidationFail))
-    $ L.generalize L.list
+failedTransactions :: EmulatorEventFold [(Tx, ValidationError)]
+failedTransactions = preMapMaybe (preview (eteEvent . chainEvent . _TxnValidationFail)) L.list
 
 -- | Transactions that were validated
-validatedTransactions ::
-    EmulatorEventFold [Tx]
-validatedTransactions =
-    preMapMaybeM (return . preview (eteEvent . chainEvent . _TxnValidate))
-    $ L.generalize L.list
+validatedTransactions :: EmulatorEventFold [Tx]
+validatedTransactions = preMapMaybe (preview (eteEvent . chainEvent . _TxnValidate)) L.list
 
 -- | The state of a contract instance, recovered from the emulator log.
 instanceState ::
@@ -84,7 +79,7 @@ instanceState ::
     ContractConstraints s
     => Contract s e a
     -> ContractInstanceTag
-    -> EmulatorEventFold (ContractInstanceState s e a)
+    -> EmulatorEventFoldM (ContractInstanceState s e a)
 instanceState con tag = 
     let flt :: EmulatorEvent -> Maybe (Response JSON.Value)
         flt = preview (eteEvent . instanceEvent . filtered ((==) tag . view cilTag) . cilMessage . _HandledRequest)
@@ -104,7 +99,7 @@ instanceRequests ::
     ContractConstraints s
     => Contract s e a
     -> ContractInstanceTag
-    -> EmulatorEventFold [Request (Handlers s)]
+    -> EmulatorEventFoldM [Request (Handlers s)]
 instanceRequests con = fmap g . instanceState con where
     g = State.unRequests . wcsRequests . instContractState
 
@@ -114,7 +109,7 @@ instanceResponses ::
     ContractConstraints s
     => Contract s e a
     -> ContractInstanceTag
-    -> EmulatorEventFold [Response (Event s)]
+    -> EmulatorEventFoldM [Response (Event s)]
 instanceResponses con = fmap (toList . instEvents) . instanceState con
 
 -- | The log messages produced by the contract instance.
@@ -122,7 +117,7 @@ instanceLog :: ContractInstanceTag -> EmulatorEventFold [ContractInstanceLog]
 instanceLog tag = 
     let flt :: EmulatorEvent -> Maybe ContractInstanceLog
         flt = preview (eteEvent . instanceEvent . filtered ((==) tag . view cilTag))
-    in L.generalize $ preMapMaybe flt $ Fold (flip (:)) [] reverse
+    in preMapMaybe flt $ Fold (flip (:)) [] reverse
 
 data Outcome e a =
     Done a
@@ -142,33 +137,32 @@ instanceOutcome ::
     ContractConstraints s
     => Contract s e a
     -> ContractInstanceTag
-    -> EmulatorEventFold (Outcome e a)
+    -> EmulatorEventFoldM (Outcome e a)
 instanceOutcome con =
     fmap (fromResumableResult . instContractState) . instanceState con
 
 -- | Unspent outputs at an address
-utxoAtAddress :: Monad m => Address -> FoldM m EmulatorEvent UtxoMap
+utxoAtAddress :: Address -> EmulatorEventFold UtxoMap
 utxoAtAddress addr =
-    preMapMaybeM (return . preview (eteEvent . chainEvent . _TxnValidate))
-    $ L.generalize
+    preMapMaybe (preview (eteEvent . chainEvent . _TxnValidate))
     $ Fold (flip AM.updateAddresses) (AM.addAddress addr mempty) (view (AM.fundsAt addr))
 
 -- | The total value of unspent outputs at an address
-valueAtAddress :: Monad m => Address -> FoldM m EmulatorEvent Value
+valueAtAddress :: Address -> EmulatorEventFold Value
 valueAtAddress = fmap (foldMap (txOutValue . txOutTxOut)) . utxoAtAddress
 
 -- | The funds belonging to a wallet
-walletFunds :: Monad m => Wallet -> FoldM m EmulatorEvent Value
+walletFunds :: Wallet -> EmulatorEventFold Value
 walletFunds = valueAtAddress . walletAddress
 
 -- | Whether the wallet is watching an address
-walletWatchingAddress :: Monad m => Wallet -> Address -> FoldM m EmulatorEvent Bool
+walletWatchingAddress :: Wallet -> Address -> EmulatorEventFold Bool
 walletWatchingAddress wllt addr = 
-    preMapMaybeM (return . preview (eteEvent . chainIndexEvent wllt . _AddressStartWatching))
-    $ L.generalize $ L.any ((==) addr)
+    preMapMaybe (preview (eteEvent . chainIndexEvent wllt . _AddressStartWatching))
+    $ L.any ((==) addr)
 
 -- | Annotate the transactions that were validated by the node
-annotatedBlockchain :: Fold EmulatorEvent [[AnnotatedTx]]
+annotatedBlockchain :: EmulatorEventFold [[AnnotatedTx]]
 annotatedBlockchain = 
     preMapMaybe (preview (eteEvent . chainEvent))
     $ Fold Rollup.handleChainEvent Rollup.initialState Rollup.getAnnotatedTransactions
