@@ -47,6 +47,7 @@ module Plutus.Trace.Emulator.Types(
     , _HandledRequest
     , _CurrentRequests
     , _InstErr
+    , _ContractLog
     ) where
 
 import           Control.Lens
@@ -59,7 +60,7 @@ import qualified Data.Aeson                         as JSON
 import           Data.Map                           (Map)
 import Data.String (IsString)
 import           Data.Proxy                         (Proxy (..))
-import           Data.Text.Prettyprint.Doc (Pretty(..), (<+>), colon, braces, viaShow, fillSep, vsep)
+import           Data.Text.Prettyprint.Doc (Pretty(..), (<+>), colon, braces, viaShow, fillSep, vsep, hang)
 import qualified Data.Row.Internal                  as V
 import           GHC.Generics                       (Generic)
 import Data.Text (Text)
@@ -198,6 +199,7 @@ data ContractInstanceMsg =
     | HandledRequest (Response JSON.Value)
     | CurrentRequests [Request JSON.Value]
     | InstErr ContractInstanceError
+    | ContractLog JSON.Value
     deriving stock (Eq, Ord, Show, Generic)
     deriving anyclass (ToJSON, FromJSON)
 
@@ -210,6 +212,7 @@ instance Pretty ContractInstanceMsg where
         HandledRequest rsp -> "Handled request:" <+> pretty (show . JSON.encode <$> rsp)
         CurrentRequests lst -> "Current requests:" <+> fillSep (pretty . fmap (show . JSON.encode) <$> lst)
         InstErr e -> "Error:" <+> pretty e
+        ContractLog v -> "Contract log:" <+> viaShow v
 
 data ContractInstanceLog =
     ContractInstanceLog
@@ -222,7 +225,7 @@ data ContractInstanceLog =
 
 instance Pretty ContractInstanceLog where
     pretty ContractInstanceLog{_cilMessage, _cilId, _cilTag} =
-        vsep [pretty _cilId <+> braces (pretty _cilTag) <> colon, pretty _cilMessage]
+        hang 2 $ vsep [pretty _cilId <+> braces (pretty _cilTag) <> colon, pretty _cilMessage]
 
 makeLenses ''ContractInstanceLog
 makePrisms ''ContractInstanceMsg

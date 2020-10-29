@@ -14,6 +14,7 @@ module Wallet.Emulator.Folds (
     , instanceResponses
     , instanceOutcome
     , Outcome(..)
+    , instanceLog
     -- * Folds for transactions and the UTXO set
     , failedTransactions
     , validatedTransactions
@@ -40,7 +41,7 @@ import Language.Plutus.Contract (Contract)
 import qualified Control.Foldl as L
 import Ledger.Value (Value)
 import Data.Sequence (Seq(..))
-import Plutus.Trace.Emulator.Types (ContractInstanceTag, ContractInstanceMsg, cilMessage, cilTag, _HandledRequest, ContractConstraints)
+import Plutus.Trace.Emulator.Types (ContractInstanceTag, ContractInstanceMsg, cilMessage, cilTag, _HandledRequest, ContractConstraints, ContractInstanceLog)
 import           Language.Plutus.Contract.Schema               (Event (..), Handlers)
 import Plutus.Trace.Emulator.ContractInstance (ContractInstanceState, addEventInstanceState, emptyInstanceState, instHandlersHistory, instEvents, instContractState)
 import qualified Data.Aeson as JSON
@@ -111,6 +112,13 @@ instanceResponses ::
     -> EmulatorEventFold [Response (Event s)]
 instanceResponses con = fmap (toList . instEvents) . instanceState con
 
+-- | The log messages produced by the contract instance.
+instanceLog :: ContractInstanceTag -> EmulatorEventFold [ContractInstanceLog]
+instanceLog tag = 
+    let flt :: EmulatorEvent -> Maybe ContractInstanceLog
+        flt = preview (eteEvent . instanceEvent . filtered ((==) tag . view cilTag))
+    in L.generalize $ preMapMaybe flt $ Fold (flip (:)) [] reverse
+
 data Outcome e a =
     Done a
     -- ^ The contract finished without errors and produced a result
@@ -166,6 +174,12 @@ preMapMaybeM f (FoldM step begin done) = FoldM step' begin done where
         case result of
             Nothing -> pure x
             Just a' -> step x a'
+
+preMapMaybe :: (a -> Maybe b) -> Fold b r -> Fold a r
+preMapMaybe f (Fold step begin done) = Fold step' begin done where
+    step' x a = case f a of
+        Nothing -> x
+        Just b -> step x b
 
 -- | Effectfully map the result of a 'FoldM'
 postMapM ::

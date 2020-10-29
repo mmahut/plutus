@@ -29,14 +29,15 @@ import           Control.Monad.Freer
 import           Control.Monad.Freer.Coroutine                 (Yield)
 import           Control.Monad.Freer.Error                     (Error, throwError)
 import           Control.Monad.Freer.Extras                    (raiseEnd11)
-import           Control.Monad.Freer.Log                       (LogMessage, LogMsg, LogObserve, logDebug, logError,
+import           Control.Monad.Freer.Log                       (LogMessage, LogMsg(..), LogObserve, logDebug, logError,
                                                                 logInfo, mapLog)
 import           Control.Monad.Freer.Reader                    (Reader, ask, runReader)
-import           Control.Monad.Freer.State                     (State, evalState, gets, modify)
+import           Control.Monad.Freer.State                     (State, evalState, gets, modify, get, put)
 import           Data.Aeson                                    (FromJSON, ToJSON)
 import qualified Data.Aeson.Types                              as JSON
 import           Data.Foldable                                 (traverse_)
 import           Data.Sequence                                 (Seq)
+import qualified Data.Sequence as Seq
 import qualified Data.Text                                     as T
 import           GHC.Generics                                  (Generic)
 import           Language.Plutus.Contract                      (Contract (..), HasBlockchainActions)
@@ -107,6 +108,7 @@ contractThread ContractHandle{chInstanceId, chContract, chInstanceTag} = do
         $ interpret (mapLog (\m -> ContractInstanceLog m chInstanceId chInstanceTag))
         $ do
             logInfo Started
+            logNewMessages @s @e @() Seq.empty
             logCurrentRequests
             msg <- mkSysCall @effs @EmulatorMessage Low Suspend
             runInstance msg
@@ -201,10 +203,15 @@ getHooks = State.unRequests . wcsRequests <$> gets @(ContractInstanceState s e a
 addResponse
     :: forall s e a effs.
     ( Member (State (ContractInstanceState s e a)) effs
+    , Member (LogMsg ContractInstanceMsg) effs
     )
     => Response (Event s)
     -> Eff effs ()
-addResponse e = modify @(ContractInstanceState s e a) $ addEventInstanceState e
+addResponse e = do
+    oldState <- get @(ContractInstanceState s e a)
+    let newState = addEventInstanceState e oldState
+    put newState
+    logNewMessages @s @e @a (wcsLogs $ instContractState oldState)
 
 raiseWallet :: forall f effs.
     ( Member f EmulatedWalletEffects
@@ -238,6 +245,7 @@ respondToRequest :: forall s e a effs.
     , Member (Reader Wallet) effs
     , Member ContractRuntimeEffect effs
     , Member (Reader ContractInstanceId) effs
+    , Member (LogMsg ContractInstanceMsg) effs
     )
     => RequestHandler (Reader ContractInstanceId ': ContractRuntimeEffect ': EmulatedWalletEffects) (Handlers s) (Event s)
     -- ^ How to respond to the requests.
@@ -303,3 +311,16 @@ logCurrentRequests :: forall s e a effs.
 logCurrentRequests = do
     hks <- getHooks @s @e @a
     logInfo $ CurrentRequests $ fmap (fmap JSON.toJSON) hks
+
+logNewMessages :: forall s e a effs.
+    ( Member (LogMsg ContractInstanceMsg) effs
+    , Member (State (ContractInstanceState s e a)) effs
+    )
+    => Seq (LogMessage JSON.Value) -- old messages
+    -> Eff effs ()
+logNewMessages oldMessages = do
+    newState <- get @(ContractInstanceState s e a)
+    let contractLogs = wcsLogs $ instContractState newState
+        -- oldContractLogs = wcsLogs $ instContractState oldState
+        newContractLogs = Seq.drop (Seq.length oldMessages) contractLogs
+    traverse_ (send . LMessage . fmap ContractLog) newContractLogs

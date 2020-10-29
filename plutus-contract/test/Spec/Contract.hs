@@ -32,6 +32,7 @@ import qualified Ledger.Crypto                                 as Crypto
 import           Prelude                                       hiding (not)
 import Plutus.Trace.Emulator (callEndpoint, activateContract, ContractInstanceTag, Emulator)
 import Plutus.Trace (Trace)
+import Plutus.Trace.Emulator.Types (ContractInstanceLog(..), ContractInstanceMsg(..))
 import qualified Plutus.Trace as Trace
 import qualified Wallet.Emulator                               as EM
 
@@ -166,6 +167,17 @@ tests =
         , run 1 "error handling & checkpoints"
             (assertDone errorContract tag (\i -> i == 11) "should finish")
             (void $ activateContract w1 (void errorContract) tag >>= \hdl -> callEndpoint @"1" w1 hdl 1 >> callEndpoint @"2" w1 hdl 10 >> callEndpoint @"3" w1 hdl 11)
+
+        , let theContract :: Contract Schema ContractError () = logInfo @String "waiting for endpoint 1" >> endpoint @"1" >>= logInfo . (<>) "Received value: " . show
+              matchLogs :: [ContractInstanceLog] -> Bool
+              matchLogs lgs =
+                  case (_cilMessage <$> lgs) of
+                            [ Started, ContractLog "waiting for endpoint 1", CurrentRequests [_], ReceiveEndpointCall _, ContractLog "Received value: 27", HandledRequest _, CurrentRequests [], Stopped] -> True
+                            _ -> False
+
+          in run 1 "contract logs"
+                (assertInstanceLog tag matchLogs)
+                (void $ activateContract w1 theContract tag >>= \hdl -> callEndpoint @"1" w1 hdl 27)
         ]
 
 w1 :: EM.Wallet

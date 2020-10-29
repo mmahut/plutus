@@ -28,10 +28,11 @@ module Language.Plutus.Contract.Test(
     , assertDone
     , assertNotDone
     , assertContractError
+    , Outcome(..)
     , assertOutcome
+    , assertInstanceLog
     , assertNoFailedTransactions
     , assertFailedTransaction
-    , Outcome(..)
     , assertHooks
     , assertResponses
     , tx
@@ -103,7 +104,7 @@ import           Plutus.Trace                                    (Emulator, Trac
 import           Plutus.Trace.Emulator                           (runEmulatorStream)
 import qualified Wallet.Emulator.Folds as Folds
 import Wallet.Emulator.Folds (EmulatorFoldErr, postMapM, Outcome(..))
-import Plutus.Trace.Emulator.Types (ContractInstanceTag, ContractConstraints)
+import Plutus.Trace.Emulator.Types (ContractInstanceTag, ContractConstraints, ContractInstanceLog)
 import qualified Streaming.Prelude as S
 import qualified Streaming as S
 
@@ -457,3 +458,12 @@ assertNoFailedTransactions =
         xs -> do
             tell @(Doc Void) $ vsep ("Transactions failed to validate:" : fmap pretty xs)
             pure False
+
+assertInstanceLog :: 
+    ContractInstanceTag
+    -> ([ContractInstanceLog] -> Bool)
+    -> TracePredicate
+assertInstanceLog tag pred = flip postMapM (Folds.instanceLog tag) $ \lg -> do
+    let result = pred lg
+    unless result (tell @(Doc Void) $ vsep ("Contract instance log failed to validate:" : fmap pretty lg))
+    pure result
