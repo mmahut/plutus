@@ -166,6 +166,14 @@ stage endpoints programJson simulatorWalletsJson = do
         Left err              -> Left . OtherError . show $ err
         Right (_, traceState) -> analyzeEmulatorState traceState emulatorState
 
+-- TODO:
+-- buildSimulation :: [Wallet] -> [Expression] -> Trace Emulator
+-- where we
+-- 1. Start the contract for all simulated wallets
+-- 2. Store the handles in a map
+-- 3. turn analyzeEmulatorState into a fold of emulator events
+-- 4. Run the trace and fold the result
+
 buildSimulation ::
        (HasBlockchainActions s)
     => [Wallet]

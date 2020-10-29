@@ -180,6 +180,7 @@ preMapMaybeM f (FoldM step begin done) = FoldM step' begin done where
             Nothing -> pure x
             Just a' -> step x a'
 
+-- | 'Data.Maybe.mapMaybe' for 'Fold'.
 preMapMaybe :: (a -> Maybe b) -> Fold b r -> Fold a r
 preMapMaybe f (Fold step begin done) = Fold step' begin done where
     step' x a = case f a of
