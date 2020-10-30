@@ -56,10 +56,6 @@ import Language.Plutus.Common
 import qualified Control.Exception as Prelude (throw, Exception)
 import qualified Data.Typeable as Prelude
 
--- Apparently this is how you're supposed to fail at TH time.
-dieTH :: MonadFail m => String -> m a
-dieTH message = fail $ "Generating Lift instances: " ++ message
-
 {- Note [Compiling at TH time and runtime]
 We want to reuse PIR's machinery for defining datatypes. However, one cannot
 get a PLC Type consisting of the compiled PIR type, because the compilation of the
@@ -435,21 +431,21 @@ compileConstructorClause dt@TH.DatatypeInfo{TH.datatypeName=tyName, TH.datatypeV
     typeExprs <- if isNewtype dt then pure [] else for tvs $ \tv -> do
       (n, _) <- tvNameAndKind tv
       compileType (TH.VarT n)
-    pure $ do
-        -- Build the patter for the clause definition. All the argument will be called "arg".
-        patNames <- for argTys $ \_ -> TH.newName "arg"
-        let pat = TH.conP name (fmap TH.varP patNames)
 
-        -- `lift arg` for each arg we bind in the pattern. We need the `unsafeTExpCoerce` since this will
-        -- necessarily involve types we don't know now: the types of each argument. However, since we
-        -- know the type of `lift arg` we can get back into typed land quickly.
-        let liftExprs :: [TH.TExpQ (RTCompile PLC.DefaultUni (Term TyName Name PLC.DefaultUni ()))]
-            liftExprs = fmap (\pn -> TH.unsafeTExpCoerce $ TH.varE 'lift `TH.appE` TH.varE pn) patNames
-        rhsExpr <- if isNewtype dt
+    -- Build the patter for the clause definition. All the argument will be called "arg".
+    patNames <- for argTys $ \_ -> Trans.lift $ Trans.lift $ Trans.lift $ TH.newName "arg"
+    let pat = TH.conP name (fmap TH.varP patNames)
+
+    -- `lift arg` for each arg we bind in the pattern. We need the `unsafeTExpCoerce` since this will
+    -- necessarily involve types we don't know now: the types of each argument. However, since we
+    -- know the type of `lift arg` we can get back into typed land quickly.
+    let liftExprs :: [TH.TExpQ (RTCompile PLC.DefaultUni (Term TyName Name PLC.DefaultUni ()))]
+        liftExprs = fmap (\pn -> TH.unsafeTExpCoerce $ TH.varE 'lift `TH.appE` TH.varE pn) patNames
+
+    rhsExpr <- if isNewtype dt
             then case liftExprs of
                     [argExpr] -> pure argExpr
-                    -- TODO: switch to throwError $ Userlifterror
-                    _         -> dieTH "Newtypes must have a single constructor with a single argument"
+                    _         -> throwError $ UserLiftError "Newtypes must have a single constructor with a single argument"
             else
                 pure [||
                     -- We bind all the splices with explicit signatures to ensure we
@@ -482,7 +478,9 @@ compileConstructorClause dt@TH.DatatypeInfo{TH.datatypeName=tyName, TH.datatypeV
 
                         pure $ mkIterApp () (mkIterInst () constr types) lifts
                   ||]
-        TH.clause [pat] (TH.normalB $ TH.unTypeQ rhsExpr) []
+
+
+    pure $ TH.clause [pat] (TH.normalB $ TH.unTypeQ rhsExpr) []
 
 makeLift :: TH.Name -> TH.Q [TH.Dec]
 makeLift name = do
