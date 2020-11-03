@@ -63,7 +63,7 @@ import qualified Wallet.Rollup as Rollup
 type EmulatorEventFold a = Fold EmulatorEvent a
 
 -- | A fold over emulator events that can fail with 'EmulatorFoldErr'
-type EmulatorEventFoldM a = forall effs. Member (Error EmulatorFoldErr) effs => FoldM (Eff effs) EmulatorEvent a
+type EmulatorEventFoldM effs a = FoldM (Eff effs) EmulatorEvent a
 
 -- | Transactions that failed to validate
 failedTransactions :: EmulatorEventFold [(Tx, ValidationError)]
@@ -75,11 +75,13 @@ validatedTransactions = preMapMaybe (preview (eteEvent . chainEvent . _TxnValida
 
 -- | The state of a contract instance, recovered from the emulator log.
 instanceState ::
-    forall s e a.
-    ContractConstraints s
+    forall s e a effs.
+    ( ContractConstraints s
+    , Member (Error EmulatorFoldErr) effs
+    )
     => Contract s e a
     -> ContractInstanceTag
-    -> EmulatorEventFoldM (ContractInstanceState s e a)
+    -> EmulatorEventFoldM effs (ContractInstanceState s e a)
 instanceState con tag = 
     let flt :: EmulatorEvent -> Maybe (Response JSON.Value)
         flt = preview (eteEvent . instanceEvent . filtered ((==) tag . view cilTag) . cilMessage . _HandledRequest)
@@ -95,21 +97,25 @@ instanceState con tag =
 
 -- | The list of open requests of the contract instance at its latest iteration
 instanceRequests ::
-    forall s e a.
-    ContractConstraints s
+    forall s e a effs.
+    ( ContractConstraints s
+    , Member (Error EmulatorFoldErr) effs
+    )
     => Contract s e a
     -> ContractInstanceTag
-    -> EmulatorEventFoldM [Request (Handlers s)]
+    -> EmulatorEventFoldM effs [Request (Handlers s)]
 instanceRequests con = fmap g . instanceState con where
     g = State.unRequests . wcsRequests . instContractState
 
 -- | The reponses received by the contract instance
 instanceResponses :: 
-    forall s e a.
-    ContractConstraints s
+    forall s e a effs.
+    ( ContractConstraints s
+    , Member (Error EmulatorFoldErr) effs
+    )
     => Contract s e a
     -> ContractInstanceTag
-    -> EmulatorEventFoldM [Response (Event s)]
+    -> EmulatorEventFoldM effs [Response (Event s)]
 instanceResponses con = fmap (toList . instEvents) . instanceState con
 
 -- | The log messages produced by the contract instance.
@@ -133,11 +139,13 @@ fromResumableResult = either Failed (maybe NotDone Done) . wcsFinalState
 
 -- | The final state of the instance
 instanceOutcome :: 
-    forall s e a.
-    ContractConstraints s
+    forall s e a effs.
+    ( ContractConstraints s
+    , Member (Error EmulatorFoldErr) effs
+    )
     => Contract s e a
     -> ContractInstanceTag
-    -> EmulatorEventFoldM (Outcome e a)
+    -> EmulatorEventFoldM effs (Outcome e a)
 instanceOutcome con =
     fmap (fromResumableResult . instContractState) . instanceState con
 

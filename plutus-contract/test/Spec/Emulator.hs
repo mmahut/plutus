@@ -57,7 +57,7 @@ import           Wallet.Emulator.MultiAgent (EmulatorEvent' (..), eteEvent)
 import qualified Wallet.Emulator.NodeClient as NC
 import           Wallet.Emulator.Types
 import qualified Wallet.Emulator.Wallet     as Wallet
-import Plutus.Trace.Emulator (waitNSlots, runEmulatorTrace)
+import Plutus.Trace.Emulator (waitNSlots)
 import qualified Wallet.Graph
 
 tests :: TestTree

@@ -175,6 +175,7 @@ waitNSlots n = do
 
 data ContractInstanceError =
     ThreadIdNotFound ContractInstanceId
+    | InstanceIdNotFound Wallet
     | JSONDecodingError String
     deriving stock (Eq, Ord, Show, Generic)
     deriving anyclass (ToJSON, FromJSON)
@@ -182,6 +183,7 @@ data ContractInstanceError =
 instance Pretty ContractInstanceError where
     pretty = \case
         ThreadIdNotFound i -> "Thread ID not found:" <+> pretty i
+        InstanceIdNotFound w -> "Instance ID not found:" <+> pretty w
         JSONDecodingError e -> "JSON decoding error:" <+> pretty e
 
 -- | A user-defined tag for a contract instance. Used to find the instance's

@@ -105,6 +105,7 @@ import           Plutus.Trace.Emulator                           (runEmulatorStr
 import qualified Wallet.Emulator.Folds as Folds
 import Wallet.Emulator.Folds (EmulatorFoldErr, postMapM, Outcome(..))
 import Plutus.Trace.Emulator.Types (ContractInstanceTag, ContractConstraints, ContractInstanceLog)
+import Wallet.Emulator.Stream (takeUntilSlot, foldEmulatorStreamM)
 import qualified Streaming.Prelude as S
 import qualified Streaming as S
 
@@ -150,13 +151,11 @@ checkPredicate CheckOptions{_minLogLevel, _maxSlot} nm predicate action = HUnit.
         -- initial transaction gets validated
         action' = waitNSlots 1 >> action
         theStream :: forall effs. S.Stream (S.Of (LogMessage EmulatorEvent)) (Eff effs) ()
-        theStream = 
-            S.takeWhile (maybe True (\sl -> sl <= _maxSlot) . preview (logMessageContent . eteEvent . chainEvent . _SlotAdd))
-            $ runEmulatorStream cfg action'
-        theFold :: FoldM (Eff TestEffects) (LogMessage EmulatorEvent) Bool
-        theFold = L.premapM (pure . _logMessageContent) predicate
+        theStream = takeUntilSlot _maxSlot $ runEmulatorStream cfg action'
+        -- theFold :: FoldM (Eff TestEffects) (LogMessage EmulatorEvent) Bool
+        -- theFold = L.premapM (pure . _logMessageContent) predicate
         consumeStream :: forall a. S.Stream (S.Of (LogMessage EmulatorEvent)) (Eff TestEffects) a -> Eff TestEffects (S.Of Bool a)
-        consumeStream = L.impurely S.foldM theFold
+        consumeStream = foldEmulatorStreamM @TestEffects predicate
     result <- runM
                 $ reinterpret @(Writer (Doc Void)) @IO  (\case { Tell d -> sendM $ step $ Text.unpack $ renderStrict $ layoutPretty defaultLayoutOptions d })
                 $ runError

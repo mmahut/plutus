@@ -15,5 +15,4 @@ module Plutus.Trace(
     ) where
 
 import           Plutus.Trace.Emulator   as X
-import           Plutus.Trace.Playground as X
 import           Plutus.Trace.Types      as X
