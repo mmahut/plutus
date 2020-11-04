@@ -16,7 +16,9 @@ module Plutus.Trace.Playground(
     , payToWallet
     , callEndpoint
     , interpretPlaygroundTrace
-    , runPlayroundStream
+    , runPlaygroundStream
+    , walletInstanceTag
+    , EmulatorConfig(..)
     , defaultEmulatorConfig
     ) where
 
@@ -58,12 +60,29 @@ import           Plutus.Trace.Emulator.ContractInstance          (ContractInstan
 import           Plutus.Trace.Emulator.System                    (launchSystemThreads)
 import qualified Plutus.Trace.Emulator as Emulator
 import           Plutus.Trace.Emulator.Types                     (ContractConstraints, ContractHandle (..),
-                                                                  EmulatorMessage (..), EmulatorThreads, ContractInstanceError(..), EmulatorGlobal(..))
+                                                                  EmulatorMessage (..), EmulatorThreads, ContractInstanceError(..), EmulatorGlobal(..), ContractInstanceTag)
 import Streaming (Stream)
 import Streaming.Prelude (Of)
 
+{- Note [Wallet contract instances]
+
+In the Playground we have a single 'Contract' that we are testing, and each
+wallet runs exactly one instance of this contract. As a result,
+
+1. The 'PlaygroundLocal' actions don't require any references to a contract
+   instance because there is only one per wallet
+2. We don't need an @ActivateContract@ action, we can just start all the 
+   instances at the beginning of the simulation, using 'launchContract'
+3. For each wallet there is a unique 'ContractInstanceTag' identifying the
+   wallet's contract instance. Defined in 'walletInstanceTag'. This is
+   useful for the instance-specific folds in 'Wallet.Emulator.Folds'.
+
+-}
+
 data Playground
 
+-- | Local actions available in the Playgroun.
+--   See note [Wallet contract instances].
 data PlaygroundLocal r where
    CallEndpoint :: String -> JSON.Value -> PlaygroundLocal ()
    PayToWallet :: Wallet -> Value -> PlaygroundLocal ()
@@ -95,7 +114,7 @@ callEndpoint :: Wallet -> String -> JSON.Value -> Eff '[Trace Playground] ()
 callEndpoint wllt ep = send @(Trace Playground) . RunLocal wllt . CallEndpoint ep
 
 -- | Run a 'Trace Playground', streaming the log messages as they arrive
-runPlayroundStream :: forall s e effs a.
+runPlaygroundStream :: forall s e effs a.
     ( HasBlockchainActions s
     , ContractConstraints s
     )
@@ -103,7 +122,7 @@ runPlayroundStream :: forall s e effs a.
     -> Contract s e ()
     -> Eff '[Trace Playground] a
     -> Stream (Of (LogMessage EmulatorEvent)) (Eff effs) (Maybe EmulatorErr)
-runPlayroundStream conf contract = runTraceStream conf . interpretPlaygroundTrace contract (conf ^. initialDistribution . to Map.keys)
+runPlaygroundStream conf contract = runTraceStream conf . interpretPlaygroundTrace contract (conf ^. initialDistribution . to Map.keys)
 
 interpretPlaygroundTrace :: forall s e effs a.
     ( Member MultiAgentEffect effs
@@ -130,9 +149,14 @@ interpretPlaygroundTrace contract wallets action =
             traverse_ (launchContract contract) wallets
             interpret (handleTrace plInterpreter) $ void $ raiseEnd action
 
--- | In the Playground we are running exactly one contract instance per
---   simulated wallet. 'launchContract' starts the wallet's instance and
---   registers the 'ContractInstanceId' in the map of wallets.
+-- | The 'ContractInstanceTag' for the contract instance of a wallet. See note 
+--   [Wallet contract instances]
+walletInstanceTag :: Wallet -> ContractInstanceTag
+walletInstanceTag wllt = fromString $ "Contract instance for " <> show wllt
+
+-- | Start the wallet's instance and
+--   register the 'ContractInstanceId' in the map of wallets.
+--   See note [Wallet contract instances].
 launchContract :: forall s e effs.
     ( HasBlockchainActions s
     , ContractConstraints s
@@ -148,8 +172,7 @@ launchContract :: forall s e effs.
     -> Eff (Yield (SystemCall effs EmulatorMessage) (Maybe EmulatorMessage) ': effs) ()
 launchContract contract wllt = do
     i <- nextId
-    let tag = fromString $ "Contract instance for " <> show wllt
-        handle = ContractHandle{chContract=contract, chInstanceId = i, chInstanceTag = tag}
+    let handle = ContractHandle{chContract=contract, chInstanceId = i, chInstanceTag = walletInstanceTag wllt}
     void $ fork @effs @EmulatorMessage "contract instance" High (runReader wllt $ interpret (mapLog InstanceEvent) $ reinterpret (mapLog InstanceEvent) $ contractThread handle)
     modify @(Map Wallet ContractInstanceId) (set (at wllt) (Just i))
 

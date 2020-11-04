@@ -89,7 +89,7 @@ runTraceStream conf =
     . subsume @(State EmulatorState)
     . raiseEnd6
 
-data EmulatorConfig =
+newtype EmulatorConfig =
     EmulatorConfig
         { _initialDistribution :: InitialDistribution 
         }

@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE RankNTypes #-}
@@ -25,8 +26,10 @@ module Wallet.Emulator.Folds (
     -- * Folds for individual wallets (emulated agents)
     , walletWatchingAddress
     , walletFunds
-    -- * Annotated blockchain (used in Playground)
+    -- * Folds that are used in the Playground
     , annotatedBlockchain
+    , blockchain
+    , emulatorLog
     -- * Etc.
     , preMapMaybeM
     , preMapMaybe
@@ -49,7 +52,7 @@ import           Language.Plutus.Contract.Schema               (Event (..), Hand
 import Plutus.Trace.Emulator.ContractInstance (ContractInstanceState, addEventInstanceState, emptyInstanceState, instEvents, instContractState)
 import qualified Data.Aeson as JSON
 import           Language.Plutus.Contract.Resumable (Response, Request)
-import Wallet.Emulator.Chain (_TxnValidationFail, _TxnValidate)
+import Wallet.Emulator.Chain (_TxnValidationFail, _TxnValidate, ChainEvent(..))
 import qualified Language.Plutus.Contract.Resumable            as State
 import Language.Plutus.Contract.Types (ResumableResult(..))
 import qualified Ledger.AddressMap as AM
@@ -174,6 +177,23 @@ annotatedBlockchain :: EmulatorEventFold [[AnnotatedTx]]
 annotatedBlockchain = 
     preMapMaybe (preview (eteEvent . chainEvent))
     $ Fold Rollup.handleChainEvent Rollup.initialState Rollup.getAnnotatedTransactions
+
+-- | All transactions that happened during the simulation
+blockchain :: EmulatorEventFold [[Tx]]
+blockchain = 
+    let step (currentBlock, otherBlocks) = \case
+            SlotAdd _ -> ([], reverse currentBlock : otherBlocks)
+            TxnValidate txn -> (txn : currentBlock, otherBlocks)
+            TxnValidationFail _ _ -> (currentBlock, otherBlocks)
+        initial = ([], [])
+        extract (currentBlock, otherBlocks) =
+            reverse ((reverse currentBlock) : otherBlocks)
+    in preMapMaybe (preview (eteEvent . chainEvent))
+        $ Fold step initial extract
+
+-- | The list of all emulator events
+emulatorLog :: EmulatorEventFold [EmulatorEvent]
+emulatorLog = L.list
 
 -- | An effectful 'Data.Maybe.mapMaybe' for 'FoldM'.
 preMapMaybeM ::

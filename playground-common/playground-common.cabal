@@ -93,7 +93,8 @@ library
         wl-pprint-text -any,
         freer-simple -any,
         uuid -any,
-        streaming -any
+        streaming -any,
+        foldl -any
 
 test-suite playground-common-test
     type: exitcode-stdio-1.0
