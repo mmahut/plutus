@@ -43,7 +43,7 @@ import           Control.Monad.Except
 import           Data.String                                     (IsString)
 import           Data.Text                                       (Text)
 import           Data.Text.Prettyprint.Doc
-import Language.Plutus.Common
+import ErrorCode
 
 -- | When unlifting of a PLC term into a Haskell value fails, this error is thrown.
 newtype UnliftingError

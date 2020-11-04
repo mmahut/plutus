@@ -42,7 +42,7 @@ import           Data.Word
 import qualified Control.Monad.Combinators.NonEmpty as NE
 import           Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer         as Lex
-import Language.Plutus.Common
+import ErrorCode
 
 
 

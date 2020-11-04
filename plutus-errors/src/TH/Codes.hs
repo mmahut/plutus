@@ -2,7 +2,7 @@
 module TH.Codes (genCodes) where
 
 import Language.Haskell.TH
-import Language.Plutus.Common
+import ErrorCode
 
 genCodes :: [Name] -> Q Exp
 genCodes ns = listE $ fmap (\ n -> do

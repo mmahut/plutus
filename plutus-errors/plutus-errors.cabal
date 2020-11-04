@@ -32,17 +32,16 @@ library
       base >=4.7 && <5,
       template-haskell >= 2.16,
       containers >= 0.6,
-      plutus-common -any,
       plutus-core -any,
       plutus-tx -any,
       plutus-tx-plugin -any
   default-language: Haskell2010
 
-executable next-error
+executable plutus-errors-next
   main-is: Main.hs
   other-modules:
   hs-source-dirs:
-      app
+      exe
   build-depends:
       base >=4.7 && <5
     , plutus-errors

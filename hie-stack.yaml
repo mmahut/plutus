@@ -207,6 +207,16 @@ cradle:
       cradle:
         stack:
           component: "web-ghc:test:web-ghc-test"
+  - path: ./plutus-errors/src
+    config:
+      cradle:
+        stack:
+          component: "plutus-errors:lib"
+  - path: ./plutus-errors/exe
+    config:
+      cradle:
+        stack:
+          component: "plutus-errors:exe:plutus-errors-next"
 
   # These use the plutus plugin - HIE doesn't support plugins yet
 

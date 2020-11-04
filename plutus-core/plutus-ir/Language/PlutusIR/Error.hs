@@ -29,7 +29,7 @@ import           Control.Lens
 
 import qualified Data.Text                  as T
 import           Data.Text.Prettyprint.Doc  as PP
-import Language.Plutus.Common
+import ErrorCode
 
 data TypeErrorExt uni ann =
       MalformedDataConstrResType

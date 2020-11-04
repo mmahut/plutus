@@ -22,7 +22,6 @@ packages: plutus-core
           prettyprinter-configurable
           doc
           web-ghc
-          plutus-common
           plutus-errors
 
 -- We never, ever, want this.

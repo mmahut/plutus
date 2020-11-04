@@ -46,7 +46,7 @@ import           Numeric.Natural
 
 import           Control.DeepSeq            (NFData)
 import           GHC.Generics
-import Language.Plutus.Common
+import ErrorCode
 
 -- | A relative index used for de Bruijn identifiers.
 newtype Index = Index Natural

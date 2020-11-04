@@ -2,7 +2,7 @@
 module Errors (errors) where
 
 import Language.Haskell.TH
-import Language.Plutus.Common
+import ErrorCode
 
 import qualified Language.PlutusIR.Error as PIR
 import qualified Language.PlutusIR.Parser as PIR
@@ -13,12 +13,7 @@ import qualified Language.PlutusCore.Evaluation.Machine.Cek as PLC
 import qualified Language.UntypedPlutusCore.Evaluation.Machine.Cek as PLCU
 import qualified  Language.PlutusTx.Code as PTX
 import qualified  Language.PlutusTx.Lift.Class as PTX
-import qualified Language.PlutusTx.Utils as PTX
 import qualified  Language.PlutusTx.Compiler.Error as PTX
-import qualified Language.PlutusTx.Compiler.Expr as PTX
-import qualified Language.PlutusTx.Compiler.Type as PTX
-import qualified Language.PlutusTx.Compiler.Kind as PTX
-import qualified Language.PlutusTx.Compiler.Builtins as PTX
 
 {- | A collection of error instances and their codes that are deprecated.
 
@@ -79,13 +74,6 @@ errors =
     , 'PLCU.CekOutOfExError
     , 'PLCU.CekEvaluationFailure
     , 'PTX.ImpossibleDeserialisationFailure
-    -- -- Language.PlutusTx.Lift.Class,Prelude.error $ "Unknown local variable: " ++ show name
-    -- -- Language.PlutusTx.Lift.Class,Prelude.error $ "Constructors not created for " ++ show tyName
-    -- -- Language.PlutusTx.Lift.Class,dieTH "Newtypes must have a single constructor with a single argument"
-    -- -- Language.PlutusTx.Lift.Class,dieTH "Newtypes must have a single constructor with a single argument"
-    -- -- Language.PlutusTx.Lift.Class,dieTH $ "Unsupported kind: " ++ show k
-    -- -- Language.PlutusTx.Lift.Class,dieTH $ "Unsupported type: " ++ show t
-    -- -- Language.PlutusTx.Utils,mustbeReplaced,GHC.Exception.ErrorCall -- for "plutustx" user-error-builtin run by ghc
     , 'PTX.CompilationError
     , 'PTX.UnsupportedError
     , 'PTX.FreeVariableError
@@ -94,8 +82,5 @@ errors =
     , 'PTX.UserLiftError
     , 'PTX.LiftMissingDataCons
     , 'PTX.LiftMissingVar
-    -- -- Language.PlutusTx.Plugin,failCompilation $ "Unable to get Core name needed for the plugin to function: " ++ show name
     , 'ReservedErrorCode
-    --, 'PLC.OtherMachineError -- we don't need this one, it is a wrapper
-    -- , 'PLC.ConstAppMachineError -- we don't need this one, it is a wrapper
     ]

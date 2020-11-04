@@ -42,7 +42,7 @@ import           Control.Monad.Except
 import qualified Data.Text                          as T
 import           Data.Text.Prettyprint.Doc
 import           Data.Text.Prettyprint.Doc.Internal (Doc (Text))
-import Language.Plutus.Common
+import ErrorCode
 {- Note [Annotations and equality]
 Equality of two errors DOES DEPEND on their annotations.
 So feel free to use @deriving Eq@ for errors.

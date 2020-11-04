@@ -3,7 +3,7 @@ module TH.Bootstrap (
     ) where
 
 import Language.Haskell.TH
-import Language.Plutus.Common
+import ErrorCode
 import Data.Traversable
 import Data.List
 import Data.Function

@@ -83,4 +83,9 @@ cradle:
   - path: ./web-ghc/test
     config: { cradle: { cabal: { component: "web-ghc:web-ghc-test" } } }
 
+  - path: ./plutus-errors/src
+    config: { cradle: { cabal: { component: "lib:plutus-errors" } } }
+  - path: ./plutus-errors/exe
+    config: { cradle: { cabal: { component: "exe:plutus-errors-next" } } }
+
 # Add more as needed, I'm too lazy
