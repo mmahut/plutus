@@ -43,7 +43,6 @@ let
   # build inputs from nixpkgs ( -> ./nix/default.nix )
   nixpkgsInputs = (with pkgs; [
     # pkgs.sqlite-analyzer -- Broken on 20.03, needs a backport
-    aws_shell
     awscli
     cacert
     ghcid
