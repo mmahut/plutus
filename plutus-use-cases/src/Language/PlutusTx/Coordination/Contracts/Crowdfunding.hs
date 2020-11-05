@@ -54,8 +54,8 @@ import           GHC.Generics                      (Generic)
 import           IOTS                              (IotsType)
 
 import           Language.Plutus.Contract
-import           Language.Plutus.Contract.Trace    (ContractTrace)
-import qualified Language.Plutus.Contract.Trace    as Trace
+import qualified Plutus.Trace.Emulator    as Trace
+import Plutus.Trace.Emulator (EmulatorTrace)
 import qualified Language.Plutus.Contract.Typed.Tx as Typed
 import qualified Language.PlutusTx                 as PlutusTx
 import           Language.PlutusTx.Prelude         hiding (Applicative (..), Semigroup(..), return, (<$>), (>>), (>>=))
@@ -73,7 +73,7 @@ import qualified Ledger.Value                      as Value
 import qualified Prelude                           as Haskell
 import           Prelude                           (Semigroup(..))
 import           Schema                            (ToSchema, ToArgument)
-import           Wallet.Emulator                   (Wallet)
+import           Wallet.Emulator                   (Wallet(..))
 import qualified Wallet.Emulator                   as Emulator
 
 -- | A crowdfunding campaign.
@@ -255,29 +255,22 @@ scheduleCollection cmp = do
 
 -- | Call the "schedule collection" endpoint and instruct the campaign owner's
 --   wallet (wallet 1) to start watching the campaign address.
-startCampaign :: ContractTrace CrowdfundingSchema ContractError () ()
-startCampaign =
-    Trace.callEndpoint @"schedule collection" (Trace.Wallet 1)  ()
-        >> Trace.notifyInterestingAddresses (Trace.Wallet 1)
+startCampaign :: EmulatorTrace ()
+startCampaign = do
+    hdl <- Trace.activateContract (Wallet 1) (crowdfunding theCampaign)  "campaign owner"
+    Trace.callEndpoint @"schedule collection" (Wallet 1) hdl ()
 
 -- | Call the "contribute" endpoint, contributing the amount from the wallet
-makeContribution
-    :: Wallet
-    -> Value
-    -> ContractTrace CrowdfundingSchema ContractError () ()
-makeContribution w v =
-    Trace.callEndpoint @"contribute" w Contribution{contribValue=v}
-        >> Trace.handleBlockchainEvents w
-        >> Trace.addBlocks 1
+makeContribution :: Wallet -> Value -> EmulatorTrace ()
+makeContribution w v = do
+    hdl <- Trace.activateContract w (crowdfunding theCampaign) (Trace.walletInstanceTag w)
+    Trace.callEndpoint @"contribute" w hdl Contribution{contribValue=v}
 
 -- | Run a successful campaign with contributions from wallets 2, 3 and 4.
-successfulCampaign
-    :: ContractTrace CrowdfundingSchema ContractError () ()
-successfulCampaign =
+successfulCampaign :: EmulatorTrace ()
+successfulCampaign = do
     startCampaign
-        >> makeContribution (Trace.Wallet 2) (Ada.lovelaceValueOf 10)
-        >> makeContribution (Trace.Wallet 3) (Ada.lovelaceValueOf 10)
-        >> makeContribution (Trace.Wallet 4) (Ada.lovelaceValueOf 1)
-        >> Trace.addBlocksUntil 20
-        >> Trace.handleBlockchainEvents (Trace.Wallet 1)
-        >> Trace.addBlocks 1
+    makeContribution (Wallet 2) (Ada.lovelaceValueOf 10)
+    makeContribution (Wallet 3) (Ada.lovelaceValueOf 10)
+    makeContribution (Wallet 4) (Ada.lovelaceValueOf 1)
+

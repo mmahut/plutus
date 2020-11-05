@@ -20,6 +20,7 @@ module Plutus.Trace.Emulator.Types(
     , instanceIdThreads
     , EmulatorAgentThreadEffs
     , ContractInstanceTag(..)
+    , walletInstanceTag
     , ContractHandle(..)
     , Emulator
     , EmulatorLocal(..)
@@ -27,6 +28,7 @@ module Plutus.Trace.Emulator.Types(
     , ContractConstraints
     -- * Constructing Traces
     , activateContract
+    , activateContractWallet
     , callEndpoint
     , payToWallet
     , waitUntilSlot
@@ -58,7 +60,7 @@ import           Control.Monad.Freer.Reader         (Reader)
 import           Data.Aeson                         (FromJSON, ToJSON)
 import qualified Data.Aeson                         as JSON
 import           Data.Map                           (Map)
-import Data.String (IsString)
+import Data.String (IsString(..))
 import           Data.Proxy                         (Proxy (..))
 import           Data.Text.Prettyprint.Doc (Pretty(..), (<+>), colon, braces, viaShow, fillSep, vsep, hang)
 import qualified Data.Row.Internal                  as V
@@ -144,6 +146,9 @@ type EmulatorTrace a = Eff '[Trace Emulator] a
 activateContract :: forall s e. (HasBlockchainActions s, ContractConstraints s) => Wallet -> Contract s e () -> ContractInstanceTag -> EmulatorTrace (ContractHandle s e)
 activateContract wallet contract = send @(Trace Emulator) . RunLocal wallet . ActivateContract contract
 
+activateContractWallet :: forall s e. (HasBlockchainActions s, ContractConstraints s) => Wallet -> Contract s e () -> EmulatorTrace (ContractHandle s e)
+activateContractWallet w contract = activateContract w contract (walletInstanceTag w)
+
 callEndpoint :: forall l ep s e. (ContractConstraints s, HasEndpoint l ep s) => Wallet -> ContractHandle s e -> ep -> EmulatorTrace ()
 callEndpoint wallet hdl = send @(Trace Emulator) . RunLocal wallet . CallEndpointEm (Proxy @l) hdl
 
@@ -192,6 +197,11 @@ newtype ContractInstanceTag = ContractInstanceTag { unContractInstanceTag :: Tex
     deriving stock (Eq, Ord, Show, Generic)
     deriving anyclass (ToJSON, FromJSON)
     deriving newtype (IsString, Pretty)
+
+-- | The 'ContractInstanceTag' for the contract instance of a wallet. See note 
+--   [Wallet contract instances]
+walletInstanceTag :: Wallet -> ContractInstanceTag
+walletInstanceTag wllt = fromString $ "Contract instance for " <> show wllt
 
 data ContractInstanceMsg =
     Started

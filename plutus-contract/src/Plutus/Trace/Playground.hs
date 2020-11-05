@@ -42,6 +42,7 @@ import           Numeric.Natural                    (Natural)
 
 import           Language.Plutus.Contract                      (Contract (..), HasBlockchainActions)
 import           Wallet.Emulator.Wallet (Wallet (..))
+import Plutus.Trace.Emulator.Types (walletInstanceTag)
 import           Plutus.Trace.Effects.ContractInstanceId         (ContractInstanceIdEff, handleDeterministicIds, nextId)
 import           Plutus.Trace.Scheduler                          (Priority (..), SysCall (..), SystemCall,
                                                                   fork, mkSysCall, runThreads)
@@ -148,11 +149,6 @@ interpretPlaygroundTrace contract wallets action =
             launchSystemThreads wallets
             traverse_ (launchContract contract) wallets
             interpret (handleTrace plInterpreter) $ void $ raiseEnd action
-
--- | The 'ContractInstanceTag' for the contract instance of a wallet. See note 
---   [Wallet contract instances]
-walletInstanceTag :: Wallet -> ContractInstanceTag
-walletInstanceTag wllt = fromString $ "Contract instance for " <> show wllt
 
 -- | Start the wallet's instance and
 --   register the 'ContractInstanceId' in the map of wallets.

@@ -12,12 +12,15 @@
 
 module Plutus.Trace.Emulator(
     Emulator
+    , EmulatorTrace
     , EmulatorErr(..)
     , ContractHandle(..)
     , ContractInstanceTag(..)
     , ContractConstraints
     -- * Constructing Traces
     , Types.activateContract
+    , Types.activateContractWallet
+    , Types.walletInstanceTag
     , Types.callEndpoint
     , Types.payToWallet
     , Types.waitUntilSlot
@@ -91,6 +94,8 @@ import qualified Plutus.Trace.Emulator.Types                     as Types
 import           Plutus.Trace.Types
 import Streaming (Stream)
 import Streaming.Prelude (Of)
+
+type EmulatorTrace a = Eff '[Trace Emulator] a
 
 -- | Run a 'Trace Emulator', streaming the log messages as they arrive
 runEmulatorStream :: forall effs a.
