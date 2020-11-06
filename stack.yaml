@@ -22,6 +22,7 @@ packages:
 - prettyprinter-configurable
 - doc
 - web-ghc
+- plutus-errors
 
 extra-deps:
 # FEAT/NEAT and deps

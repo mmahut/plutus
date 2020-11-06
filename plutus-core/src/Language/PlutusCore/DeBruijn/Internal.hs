@@ -165,9 +165,9 @@ data FreeVariableError
     deriving (Show, Typeable, Eq, Ord)
 instance Exception FreeVariableError
 
-instance ErrorCode Language.PlutusCore.DeBruijn.Internal.FreeVariableError where
-    errorCode  Language.PlutusCore.DeBruijn.Internal.FreeIndex {}  = 23
-    errorCode  Language.PlutusCore.DeBruijn.Internal.FreeUnique {}  = 22
+instance ErrorCode FreeVariableError where
+    errorCode  FreeIndex {}  = 23
+    errorCode  FreeUnique {}  = 22
 
 -- | Get the 'Index' corresponding to a given 'Unique'.
 getIndex :: (MonadReader Levels m, MonadError FreeVariableError m) => Unique -> m Index

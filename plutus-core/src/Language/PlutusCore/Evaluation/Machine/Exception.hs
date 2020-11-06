@@ -237,51 +237,28 @@ instance (PrettyPlc term, PrettyPlc err, Typeable term, Typeable err) =>
             Exception (ErrorWithCause err term)
 
 
-instance ErrorCode Language.PlutusCore.Evaluation.Machine.Exception.UnliftingError where
-      errorCode
-        Language.PlutusCore.Evaluation.Machine.Exception.UnliftingErrorE {}
-        = 30
+instance ErrorCode UnliftingError where
+      errorCode        UnliftingErrorE {}        = 30
 
-instance ErrorCode (Language.PlutusCore.Evaluation.Machine.Exception.ConstAppError _a1_acYS) where
-      errorCode
-        Language.PlutusCore.Evaluation.Machine.Exception.TooManyArgumentsConstAppError {}
-        = 29
-      errorCode
-        Language.PlutusCore.Evaluation.Machine.Exception.TooFewArgumentsConstAppError {}
-        = 28
+instance ErrorCode (ConstAppError _a) where
+      errorCode        TooManyArgumentsConstAppError {}        = 29
+      errorCode        TooFewArgumentsConstAppError {}        = 28
       errorCode (UnliftingConstAppError e) = errorCode e
 
-instance ErrorCode (Language.PlutusCore.Evaluation.Machine.Exception.MachineError err _a1_acYT) where
-      errorCode
-        Language.PlutusCore.Evaluation.Machine.Exception.EmptyBuiltinArityMachineError {}
-        = 34
-      errorCode
-        Language.PlutusCore.Evaluation.Machine.Exception.UnexpectedBuiltinTermArgumentMachineError {}
-        = 33
-      errorCode
-        Language.PlutusCore.Evaluation.Machine.Exception.BuiltinTermArgumentExpectedMachineError {}
-        = 32
-      errorCode
-        Language.PlutusCore.Evaluation.Machine.Exception.OpenTermEvaluatedMachineError {}
-        = 27
-      errorCode
-        Language.PlutusCore.Evaluation.Machine.Exception.NonFunctionalApplicationMachineError {}
-        = 26
-      errorCode
-        Language.PlutusCore.Evaluation.Machine.Exception.NonWrapUnwrappedMachineError {}
-        = 25
-      errorCode
-        Language.PlutusCore.Evaluation.Machine.Exception.NonPolymorphicInstantiationMachineError {}
-        = 24
-      errorCode
-        (Language.PlutusCore.Evaluation.Machine.Exception.ConstAppMachineError e)
-        = errorCode e
-      errorCode
-        (Language.PlutusCore.Evaluation.Machine.Exception.OtherMachineError _)
-        -- clone of: https://github.com/input-output-hk/plutus/blob/7dda61b854d44b3d23407446b4b3acedef4a4c1b/plutus-core/src/Language/PlutusCore/Error.hs#L243-L244
-        = 17 -- FIXME: use `errorCode e` once we transition to error-groups instead of open error-datatypes
+instance ErrorCode (MachineError err _a) where
+      errorCode        EmptyBuiltinArityMachineError {}        = 34
+      errorCode        UnexpectedBuiltinTermArgumentMachineError {}        = 33
+      errorCode        BuiltinTermArgumentExpectedMachineError {}        = 32
+      errorCode        OpenTermEvaluatedMachineError {}        = 27
+      errorCode        NonFunctionalApplicationMachineError {}        = 26
+      errorCode        NonWrapUnwrappedMachineError {}        = 25
+      errorCode        NonPolymorphicInstantiationMachineError {}        = 24
+      errorCode        (ConstAppMachineError e)        = errorCode e
+      -- clone of: https://github.com/input-output-hk/plutus/blob/7dda61b854d44b3d23407446b4b3acedef4a4c1b/plutus-core/src/Language/PlutusCore/Error.hs#L243-L244
+      -- FIXME: use `errorCode e` once we transition to error-groups instead of open error-datatypes
+      errorCode        (OtherMachineError _)        = 17
 
-instance (ErrorCode user) => ErrorCode (EvaluationError other user t_) where
+instance (ErrorCode user) => ErrorCode (EvaluationError other user _t) where
   errorCode (InternalEvaluationError e) = errorCode e
   errorCode (UserEvaluationError e) = errorCode e
 

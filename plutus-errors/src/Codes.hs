@@ -3,6 +3,7 @@ module Codes (codes) where
 
 import TH.Codes
 import Errors
+import Numeric.Natural
 
-codes :: [Word]
+codes :: [Natural]
 codes = $(genCodes errors)

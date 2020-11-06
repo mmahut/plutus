@@ -72,11 +72,10 @@ data Error uni a = PLCError (PLC.Error uni a)
                  deriving Typeable
 makeClassyPrisms ''Error
 
-instance ErrorCode (Language.PlutusTx.Compiler.Error.Error _a2_acZ0 _a1_acYZ) where
-      errorCode Language.PlutusTx.Compiler.Error.FreeVariableError {}
-        = 43
-      errorCode Language.PlutusTx.Compiler.Error.UnsupportedError {} = 42
-      errorCode Language.PlutusTx.Compiler.Error.CompilationError {} = 41
+instance ErrorCode (Error _a _b) where
+      errorCode FreeVariableError {} = 43
+      errorCode UnsupportedError {} = 42
+      errorCode CompilationError {} = 41
       errorCode (PLCError e) = errorCode e
       errorCode (PIRError e) = errorCode e
 

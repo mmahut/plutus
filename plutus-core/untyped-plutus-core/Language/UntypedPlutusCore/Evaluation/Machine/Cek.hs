@@ -124,13 +124,9 @@ data CekUserError
     deriving (Show, Eq)
 
 -- FIXME: should this be the same errorcodes as the typed-plutus-core.CekUserError original datatype?
-instance ErrorCode Language.UntypedPlutusCore.Evaluation.Machine.Cek.CekUserError where
-      errorCode
-        Language.UntypedPlutusCore.Evaluation.Machine.Cek.CekEvaluationFailure {}
-        = 39
-      errorCode
-        Language.UntypedPlutusCore.Evaluation.Machine.Cek.CekOutOfExError {}
-        = 38
+instance ErrorCode CekUserError where
+      errorCode CekEvaluationFailure {} = 39
+      errorCode       CekOutOfExError {}  = 38
 
 {- Note [Being generic over @term@ in 'CekM']
 We have a @term@-generic version of 'CekM' called 'CekCarryingM', which itself requires a

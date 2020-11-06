@@ -39,8 +39,8 @@ data TypeErrorExt uni ann =
     deriving (Show, Eq, Generic, NFData)
 makeClassyPrisms ''TypeErrorExt
 
-instance ErrorCode (Language.PlutusIR.Error.TypeErrorExt _a2_acYY _a1_acYX) where
-  errorCode Language.PlutusIR.Error.MalformedDataConstrResType {} = 1
+instance ErrorCode (TypeErrorExt _a _b) where
+  errorCode MalformedDataConstrResType {} = 1
 
 
 data Error uni a = CompilationError a T.Text -- ^ A generic compilation error.
@@ -51,9 +51,9 @@ data Error uni a = CompilationError a T.Text -- ^ A generic compilation error.
                deriving (Typeable)
 makeClassyPrisms ''Error
 
-instance ErrorCode (Language.PlutusIR.Error.Error _a2_acYW _a1_acYV) where
-   errorCode Language.PlutusIR.Error.UnsupportedError {} = 3
-   errorCode Language.PlutusIR.Error.CompilationError {} = 2
+instance ErrorCode (Error _a _b) where
+   errorCode UnsupportedError {} = 3
+   errorCode CompilationError {} = 2
    errorCode (PIRTypeError e) = errorCode e
    errorCode (PLCTypeError e) = errorCode e
    errorCode (PLCError e) = errorCode e
@@ -92,7 +92,7 @@ instance
 
 instance (PLC.GShow uni, PLC.Closed uni, uni `PLC.Everywhere` PLC.PrettyConst, Pretty ann) =>
             PrettyBy PLC.PrettyConfigPlc (Error uni ann) where
-     prettyBy config er = PP.pretty (errorCode er) <> ":" <> case er of
+     prettyBy config er = PP.pretty (errorCode er) <> ":" <+> case er of
         CompilationError x e -> "Error during compilation:" <+> PP.pretty e <> "(" <> PP.pretty x <> ")"
         UnsupportedError x e -> "Unsupported construct:" <+> PP.pretty e <+> "(" <> PP.pretty x <> ")"
         PLCError e -> PP.vsep [ "Error from the PLC compiler:", PLC.prettyBy config e ]

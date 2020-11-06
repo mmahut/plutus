@@ -373,7 +373,7 @@ compileTypeRep dt@TH.DatatypeInfo{TH.datatypeName=tyName, TH.datatypeVars=tvs} =
 
                             defineDatatype tyName (PLC.Def dtvd datatype) deps
                         pure $ mkTyVar () dtvd
-          in runReaderT act mempty
+          in flip runReaderT mempty act
           ||]
 
 compileConstructorDecl
@@ -519,9 +519,9 @@ makeLift name = do
 -- | In case of exception, it will call `fail` in TemplateHaskell
 runTHCompile :: THCompile a -> TH.Q (a, Deps)
 runTHCompile m = do
-    res <- runExceptT $
+    res <- runExceptT .
           flip runReaderT mempty $
-          runStateT m mempty
+          flip runStateT mempty m
     case res of
         Left a -> fail $ "Generating Lift instances: " ++ show (PP.pretty a)
         Right b -> pure b

@@ -128,13 +128,9 @@ data CekUserError
     | CekEvaluationFailure -- ^ Error has been called or a builtin application has failed
     deriving (Show, Eq)
 
-instance ErrorCode Language.PlutusCore.Evaluation.Machine.Cek.CekUserError where
-      errorCode
-        Language.PlutusCore.Evaluation.Machine.Cek.CekEvaluationFailure {}
-        = 37
-      errorCode
-        Language.PlutusCore.Evaluation.Machine.Cek.CekOutOfExError {}
-        = 36
+instance ErrorCode CekUserError where
+      errorCode        CekEvaluationFailure {}        = 37
+      errorCode        CekOutOfExError {}        = 36
 
 {- Note [Being generic over @term@ in 'CekM']
 We have a @term@-generic version of 'CekM' called 'CekCarryingM', which itself requires a

@@ -2,6 +2,8 @@ module ErrorCode
     ( ErrorCode(..)
     ) where
 
+import Numeric.Natural
+
 {- NOTE [Error Codes of plutus errors]
 
 Our goal is to assign a unique-among-the-project error number (errorCode) to all errors
@@ -12,7 +14,7 @@ as to document and easily identify these plutus errors.
 We drew inspiration from `rustc` compiler error-codes:
 <https://doc.rust-lang.org/nightly/nightly-rustc/rustc_errors/index.html>
 
-An errorcode is a positive number (`Word`) assigned to every possible data-constructor
+An errorcode is a positive number (`Natural`) assigned to every possible data-constructor
 that represents an exceptional case. This includes both pure error-values raised
 by e.g. `ExceptT` but also "impure" ghc-builtin Control.Exception instances.
 
@@ -20,7 +22,7 @@ For that we created a class `ErrorCode` with one method `errorCode`,
 left to be implemented for each error by the Plutus developers.
 It is the responsibility of the  Plutus developer to make sure that
 
-1) the assigned errorcode (Word) is unique among the whole Plutus-project codebase,
+1) the assigned errorcode (Natural) is unique among the whole Plutus-project codebase,
 2) the `errorCode` method is total
 3) no "wrapper-constructors" are tagged. e.g.in:
 
@@ -63,11 +65,10 @@ be "moved" and listed/errorCoded under the umbrella datatype `plutus-errors:Erro
 The reason for this is to document/keep track of deprecated errors and not *re*-pick "old" error-codes.
 
 Currently all errors among the project are placed into one big pile of error-codes. We later
-might use sub-groups of error-codes with specific word ranges, e.g. (PIR : 0000 - 0100, PLC: 0100 - 0200, etc), which then would require
+might use sub-groups of error-codes with specific ranges, e.g. (PIR : 0000 - 0100, PLC: 0100 - 0200, etc), which then would require
 to put into use the "wrapper-constructors" of our error-grouppings.
 -}
 
 -- | Assigns an error-code (positive number) to data-constructors (values) of error types.
 class ErrorCode a where
-    errorCode :: a -> Word
-    {-# MINIMAL errorCode #-}
+    errorCode :: a -> Natural

@@ -53,9 +53,9 @@ data ParseError = UnexpectedKeyword String
                 | InternalError String
                 deriving (Eq, Ord, Show)
 
-instance ErrorCode Language.PlutusIR.Parser.ParseError where
-      errorCode Language.PlutusIR.Parser.InternalError {} = 5
-      errorCode Language.PlutusIR.Parser.UnexpectedKeyword {} = 4
+instance ErrorCode ParseError where
+      errorCode InternalError {} = 5
+      errorCode UnexpectedKeyword {} = 4
 
 type Error = Parsec.ParseError Char ParseError
 
