@@ -3,7 +3,8 @@
 module Main where
 
 
-import AllErrors
+import Errors
+import ErrorCode
 import TH.Bootstrap
 
 $(bootstrap allErrors)

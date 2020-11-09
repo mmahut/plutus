@@ -39,16 +39,17 @@ common lang
 library
   import: lang
   exposed-modules:
-      TH.Bootstrap,
-      TH.Codes,
-      TH.Docs,
       Errors,
       Codes,
       Docs
+  other-modules:
+      TH.GenCodes,
+      TH.GenDocs
   hs-source-dirs: src
   build-depends:
       base >=4.7 && <5,
       template-haskell >= 2.16,
+      th-abstraction < 0.4,
       containers >= 0.6,
       plutus-core -any,
       plutus-tx -any,
@@ -58,11 +59,10 @@ executable plutus-errors-next
   import: lang
   main-is: Main.hs
   other-modules:
-  hs-source-dirs: exe
+  hs-source-dirs: exe-next
   build-depends:
       base >=4.7 && <5,
       plutus-errors
-
 
 test-suite plutus-errors-test
   import: lang
@@ -73,4 +73,19 @@ test-suite plutus-errors-test
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5,
+      plutus-errors
+
+executable plutus-errors-bootstrap
+  import: lang
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  other-modules:
+      TH.Bootstrap
+  hs-source-dirs: exe-bootstrap
+  build-depends:
+      base >=4.7 && <5,
+      template-haskell >= 2.16,
+      th-abstraction < 0.4,
+      containers >= 0.6,
+      plutus-core,
       plutus-errors

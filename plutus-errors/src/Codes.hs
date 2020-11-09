@@ -1,9 +1,10 @@
 {-# LANGUAGE TemplateHaskell #-}
-module Codes (codes) where
+module Codes (allCodes) where
 
-import TH.Codes
+import TH.GenCodes
 import Errors
 import Numeric.Natural
 
-codes :: [Natural]
-codes = $(genCodes errors)
+-- | All the error-codes in the order of they appear in the 'allErrors' catalogue.
+allCodes :: [Natural]
+allCodes = $(genCodes allErrors)

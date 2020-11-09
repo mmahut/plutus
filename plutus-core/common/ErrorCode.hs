@@ -6,7 +6,7 @@ import Numeric.Natural
 
 {- NOTE [Error Codes of plutus errors]
 
-Our goal is to assign a unique-among-the-project error number (errorCode) to all errors
+Our goal is to assign a project-wise unique error number (errorCode) to all errors
 that might occur during any phase of plutus code --- plutustx th deriving, plugin tx compiling,
 pir compiling, plc executing, "offline" runtime plutus code ---, so
 as to document and easily identify these plutus errors.
@@ -15,7 +15,7 @@ We drew inspiration from `rustc` compiler error-codes:
 <https://doc.rust-lang.org/nightly/nightly-rustc/rustc_errors/index.html>
 
 An errorcode is a positive number (`Natural`) assigned to every possible data-constructor
-that represents an exceptional case. This includes both pure error-values raised
+that represents an exceptional case. This may include both pure error-values raised
 by e.g. `ExceptT` but also "impure" ghc-builtin Control.Exception instances.
 
 For that we created a class `ErrorCode` with one method `errorCode`,
@@ -32,7 +32,7 @@ It is the responsibility of the  Plutus developer to make sure that
     | PirCompile String
 ```
 
-we do not uniquely tag the wrapper-constructors WrapperTC,WrapperParse,WrapperCompile,
+We do not uniquely tag the wrapper-constructors WrapperTC,WrapperParse,WrapperCompile,
 we only tag the "base error constructor" PirCompile:
 
 ```

@@ -1,7 +1,8 @@
 {-# LANGUAGE TemplateHaskell #-}
-module Errors (errors) where
+-- | The cataloguing of all Plutus errors, obsolete or not.
+module Errors (allErrors) where
 
-import Language.Haskell.TH
+import Language.Haskell.TH as TH
 import ErrorCode
 
 import qualified Language.PlutusIR.Error as PIR
@@ -15,27 +16,22 @@ import qualified  Language.PlutusTx.Code as PTX
 import qualified  Language.PlutusTx.Lift.Class as PTX
 import qualified  Language.PlutusTx.Compiler.Error as PTX
 
-{- | A collection of error instances and their codes that are deprecated.
-
-When an error is deprecated (does not trigger anymore) and (some of) its dataconstructors has been removed,
-and in case the error is "exposed" to the public, then it is required that its "deprecated" constructors
-be "moved" and listed/errorCoded under the umbrella datatype `plutus-errors:Errors.DeprecatedErrors`.
-
-See NOTE [Error Codes of plutus errors]
+{- | A collection of error instances which are obsolete, together with their error codes bundled to one instance.
+See plutus-errors/README.md
 -}
-{-# DEPRECATED DeprecatedErrors "These errors and their error codes *should* not be thrown by any plutus code anymore" #-}
-data DeprecatedErrors =
+{-# WARNING ObsoleteErrors "These errors and their error codes *should* not be thrown by any plutus code anymore" #-}
+data ObsoleteErrors =
     ReservedErrorCode
-    -- append here your deprecated errors
+    -- append here the obsolete errors
 
-instance ErrorCode DeprecatedErrors where
+instance ErrorCode ObsoleteErrors where
     errorCode ReservedErrorCode {} = 0
+    -- append here the corresponding obsolete error codes
 
--- | All errors among the whole project categorized. This includes both existing and deprecated errors.
---
--- Note: order of adding to this list does not matter at the moment.
-errors :: [Name]
-errors =
+-- | All errors among the whole Plutus project. This includes both existing and obsolete errors.
+-- Note: the order of adding to this list does not matter, except for haddock looks.
+allErrors :: [TH.Name]
+allErrors =
    [ 'ReservedErrorCode
    , 'PIR.MalformedDataConstrResType
    , 'PIR.CompilationError
