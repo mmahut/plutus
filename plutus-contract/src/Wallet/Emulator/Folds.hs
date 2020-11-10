@@ -31,6 +31,7 @@ module Wallet.Emulator.Folds (
     , blockchain
     , emulatorLog
     -- * Etc.
+    , renderLines
     , preMapMaybeM
     , preMapMaybe
     , postMapM
@@ -41,6 +42,9 @@ import Control.Lens hiding (Empty, Fold)
 import Control.Monad.Freer
 import Control.Monad ((>=>))
 import Data.Foldable (toList)
+import Data.Text (Text)
+import           Data.Text.Prettyprint.Doc (Pretty(..), vsep, layoutPretty, defaultLayoutOptions)
+import           Data.Text.Prettyprint.Doc.Render.Text           (renderStrict)
 import Control.Monad.Freer.Error
 import Ledger.Tx (Address, Tx, TxOutTx(..), TxOut(..))
 import Ledger.Index (ValidationError)
@@ -88,7 +92,7 @@ instanceState ::
 instanceState con tag = 
     let flt :: EmulatorEvent -> Maybe (Response JSON.Value)
         flt = preview (eteEvent . instanceEvent . filtered ((==) tag . view cilTag) . cilMessage . _HandledRequest)
-        decode :: forall effs. Member (Error EmulatorFoldErr) effs => EmulatorEvent -> Eff effs (Maybe (Response (Event s)))
+        decode :: forall effs'. Member (Error EmulatorFoldErr) effs' => EmulatorEvent -> Eff effs' (Maybe (Response (Event s)))
         decode e = do
             case flt e of
                 Nothing -> pure Nothing
@@ -194,6 +198,12 @@ blockchain =
 -- | The list of all emulator events
 emulatorLog :: EmulatorEventFold [EmulatorEvent]
 emulatorLog = L.list
+
+-- | Pretty-print each element into a new line.
+renderLines :: forall a. Pretty a => Fold a Text
+renderLines = 
+    let rnd = renderStrict . layoutPretty defaultLayoutOptions in
+    dimap pretty (rnd . vsep) L.list
 
 -- | An effectful 'Data.Maybe.mapMaybe' for 'FoldM'.
 preMapMaybeM ::

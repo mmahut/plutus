@@ -63,8 +63,6 @@ initialDeposit = Ada.lovelaceValueOf 100
 initialFee :: Value
 initialFee = Ada.lovelaceValueOf 1
 
---         Stablecoin.contract
-
 tests :: TestTree
 tests = testGroup "Stablecoin"
     [ checkPredicate defaultCheckOptions "mint reservecoins"

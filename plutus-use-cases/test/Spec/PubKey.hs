@@ -13,6 +13,7 @@ import           Ledger.Constraints                              (ScriptLookups 
 import qualified Ledger.Constraints                              as Constraints
 import           Ledger.Scripts                                  (unitRedeemer)
 import           Ledger.Typed.Scripts                            as Scripts
+import qualified Plutus.Trace.Emulator    as Trace
 
 import           Language.PlutusTx.Coordination.Contracts.PubKey (PubKeyError, pubKeyContract)
 
@@ -36,8 +37,10 @@ theContract = do
 
 tests :: TestTree
 tests = testGroup "pubkey"
-  [ checkPredicate "works like a public key output"
-      theContract
-      (walletFundsChange w1 mempty /\ assertDone w1 (const True) "pubkey contract not done")
-      (handleBlockchainEvents (Wallet 1) >> addBlocks 1 >> handleBlockchainEvents (Wallet 1) >> addBlocks 1)
+  [ checkPredicate defaultCheckOptions "works like a public key output"
+      -- theContract
+      (walletFundsChange w1 mempty .&&. assertDone theContract (Trace.walletInstanceTag w1) (const True) "pubkey contract not done")
+      $ do
+        _ <- Trace.activateContractWallet w1 theContract
+        void $ Trace.waitNSlots 2
   ]

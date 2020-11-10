@@ -22,6 +22,7 @@ module Plutus.Trace.Emulator(
     , Types.activateContractWallet
     , Types.walletInstanceTag
     , Types.callEndpoint
+    , Types.setSigningProcess
     , Types.payToWallet
     , Types.waitUntilSlot
     , Types.waitNSlots

@@ -3,7 +3,9 @@
 {-# LANGUAGE TypeApplications #-}
 module Spec.Rollup where
 
-
+import Control.Monad.Freer.Error (runError)
+import Control.Monad.Freer (run)
+import qualified Control.Foldl as L
 import           Data.Aeson                                            (FromJSON)
 import           Data.ByteString.Lazy                                  (ByteString)
 import qualified Data.ByteString.Lazy                                  as LBS
@@ -11,7 +13,7 @@ import qualified Data.Map                                              as Map
 import qualified Data.Row.Internal                                     as V
 import           Data.Text.Encoding                                    (encodeUtf8)
 
-import           Language.Plutus.Contract
+import           Language.Plutus.Contract hiding (runError)
 import           Language.Plutus.Contract.Schema                       (Input, Output)
 import           Language.Plutus.Contract.Trace
 import           Ledger                                                (pubKeyHash)
@@ -27,40 +29,37 @@ import           Test.Tasty.HUnit                                      (assertFa
 import qualified Wallet.Emulator.Chain                                 as EM
 import           Wallet.Emulator.Types
 import qualified Wallet.Emulator.Wallet                                as EM
-import           Wallet.Rollup.Render                                  (showBlockchain)
+import           Wallet.Rollup.Render                                  (showBlockchainFold)
+import Plutus.Trace.Emulator (runEmulatorStream, EmulatorTrace)
+import Wallet.Emulator.Stream (foldEmulatorStreamM, takeUntilSlot)
+import qualified Plutus.Trace.Emulator    as Trace
+import qualified Streaming.Prelude as S
 
 tests :: TestTree
 tests = testGroup "showBlockchain"
      [ goldenVsString
           "renders a crowdfunding scenario sensibly"
           "test/Spec/renderCrowdfunding.txt"
-          (render (crowdfunding theCampaign) successfulCampaign)
+          (render successfulCampaign)
      , goldenVsString
           "renders a guess scenario sensibly"
           "test/Spec/renderGuess.txt"
-          (render @_ @ContractError game guessTrace)
+          (render guessTrace)
      , goldenVsString
           "renders a vesting scenario sensibly"
           "test/Spec/renderVesting.txt"
-          (render @_ @VestingError (vestingContract Spec.Vesting.vesting) Spec.Vesting.retrieveFundsTrace)
+          (render Spec.Vesting.retrieveFundsTrace)
      ]
 
-render
-    :: forall s e a.
-     ( Show e
-     , V.AllUniqueLabels (Input s)
-     , V.Forall (Input s) FromJSON
-     , V.Forall (Output s) V.Unconstrained1
-     )
-    => Contract s e a
-    -> ContractTrace s e a ()
-    -> IO ByteString
-render con trace = do
-    let (result, EmulatorState{ _chainState = cs, _walletClientStates = wallets}) = runTrace con trace
-    let walletKeys = flip fmap (Map.keys wallets) $ \w -> (pubKeyHash $ EM.walletPubKey w, w)
+render :: forall a. EmulatorTrace a -> IO ByteString
+render trace = do
+    let result = 
+               S.fst'
+               $ run
+               $ foldEmulatorStreamM (L.generalize (showBlockchainFold allWallets))
+               $ takeUntilSlot 20
+               $ runEmulatorStream Trace.defaultEmulatorConfig trace
+        allWallets = fmap (\w -> (pubKeyHash (walletPubKey w), w)) [Wallet 1, Wallet 2]
     case result of
         Left err -> assertFailure $ show err
-        Right _ ->
-            case showBlockchain walletKeys (EM._chainNewestFirst cs) of
-                Left err       -> assertFailure $ show err
-                Right rendered -> pure . LBS.fromStrict . encodeUtf8 $ rendered
+        Right rendered -> pure $ LBS.fromStrict $ encodeUtf8 rendered

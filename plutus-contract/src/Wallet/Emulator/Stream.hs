@@ -16,12 +16,15 @@ module Wallet.Emulator.Stream(
     , initialDistribution
     , defaultEmulatorConfig
     , runTraceStream
+    -- * Stream manipulation
     , takeUntilSlot
+    , filterLogLevel
     -- * Consuming streams
+    , foldStreamM
     , foldEmulatorStreamM
     ) where
 
-import Control.Lens (preview, view, makeLenses)
+import Control.Lens (preview, view, makeLenses, filtered)
 import Control.Monad.Freer (Eff, run, interpret, Member, type (~>), reinterpret, subsume)
 import           Control.Monad.Freer.Coroutine                   (Yield, yield)
 import Control.Monad.Freer.State (State, evalState, gets)
@@ -29,7 +32,7 @@ import Control.Monad.Freer.Error (Error, runError)
 import           Control.Monad.Freer.Extras                      (raiseEnd6, wrapError)
 import Control.Monad.Freer.Stream (runStream)
 import qualified Control.Foldl as L
-import           Control.Monad.Freer.Log                         (LogMessage, logMessageContent, LogMsg(..), mapMLog)
+import           Control.Monad.Freer.Log                         (LogMessage, logMessageContent, LogMsg(..), mapMLog, LogLevel, LogMessage(..))
 import qualified Data.Map                                        as Map
 import Ledger.Slot (Slot)
 import           Wallet.Emulator                                 (EmulatorEvent, EmulatorEvent')
@@ -50,6 +53,19 @@ import           Plutus.Trace.Emulator.ContractInstance          (ContractInstan
 takeUntilSlot :: forall effs a. Slot -> S.Stream (S.Of (LogMessage EmulatorEvent)) (Eff effs) a -> S.Stream (S.Of (LogMessage EmulatorEvent)) (Eff effs) ()
 takeUntilSlot maxSlot = S.takeWhile (maybe True (\sl -> sl <= maxSlot) . preview (logMessageContent . eteEvent . chainEvent . _SlotAdd))
 
+-- | Remove from the stream all log messages whose log level is lower than the
+--   the given level.
+filterLogLevel :: forall effs a. LogLevel -> S.Stream (S.Of (LogMessage EmulatorEvent)) (Eff effs) a -> S.Stream (S.Of (LogMessage EmulatorEvent)) (Eff effs) a
+filterLogLevel lvl = S.mapMaybe (preview (filtered (\LogMessage{_logLevel} -> lvl <= _logLevel)))
+
+-- | Apply a fold to an effectful stream of events.
+foldStreamM :: forall m a b c.
+    Monad m
+    => L.FoldM m a b
+    -> S.Stream (S.Of a) m c
+    -> m (S.Of b c)
+foldStreamM theFold = L.impurely S.foldM theFold
+
 -- | Consume an emulator event stream. Make sure that the stream terminates
 --   (either with 'takeUntilSlot', or by using a short-circuiting effect
 --   such as 'Error')
@@ -57,9 +73,8 @@ foldEmulatorStreamM :: forall effs a b.
     L.FoldM (Eff effs) EmulatorEvent b
     -> S.Stream (S.Of (LogMessage EmulatorEvent)) (Eff effs) a
     -> Eff effs (S.Of b a)
-foldEmulatorStreamM theFold = 
-    let theFold' = L.premapM (pure . view logMessageContent) theFold
-    in L.impurely S.foldM theFold'
+foldEmulatorStreamM theFold =
+    foldStreamM (L.premapM (pure . view logMessageContent) theFold)
 
 -- | Turn an emulator action into a potentially infinite 'Stream' of emulator
 --   log messages.

@@ -11,6 +11,10 @@
 {-# OPTIONS_GHC -fno-warn-incomplete-uni-patterns #-}
 module Spec.Future(tests, theFuture, accounts) where
 
+import Control.Monad (void)
+import Control.Monad.Freer (run)
+import Control.Monad.Freer.Error (runError)
+import Wallet.Emulator.Stream (foldEmulatorStreamM, takeUntilSlot)
 import           Test.Tasty
 import qualified Test.Tasty.HUnit                                as HUnit
 
@@ -31,49 +35,57 @@ import           Language.PlutusTx.Coordination.Contracts.Future (Future (..), F
                                                                   FutureSchema, FutureSetup (..), Role (..))
 import qualified Language.PlutusTx.Coordination.Contracts.Future as F
 import           Language.PlutusTx.Lattice
+import qualified Plutus.Trace.Emulator    as Trace
+import Plutus.Trace.Emulator (EmulatorTrace, ContractHandle)
+import qualified Wallet.Emulator.Folds as Folds
+import qualified Streaming.Prelude as S
 
 tests :: TestTree
 tests =
     testGroup "futures"
-    [ checkPredicate @FutureSchema "setup tokens"
-        (F.setupTokens @FutureSchema @FutureError )
-        ( assertDone w1 (const True) "setupTokens" )
-        ( handleBlockchainEvents w1 >> addBlocks 1 >> handleBlockchainEvents w1 >> addBlocks 1 >> handleBlockchainEvents w1 )
+    [ checkPredicate defaultCheckOptions "setup tokens"
+        (assertDone (F.futureContract theFuture) (Trace.walletInstanceTag w1) (const True) "setupTokens")
+        $ do
+            hdl <- Trace.activateContractWallet w1 (void $ F.setupTokens @FutureSchema @FutureError)
+            void $ Trace.waitNSlots 2
 
-    , checkPredicate @FutureSchema "can initialise and obtain tokens"
-        (F.futureContract theFuture)
+    , checkPredicate defaultCheckOptions "can initialise and obtain tokens"
+        -- (F.futureContract theFuture)
         (walletFundsChange w1 (scale (-1) (F.initialMargin theFuture) <> F.tokenFor Short accounts)
-        /\ walletFundsChange w2 (scale (-1) (F.initialMargin theFuture) <> F.tokenFor Long accounts))
-        ( initContract >> joinFuture )
+        .&&. walletFundsChange w2 (scale (-1) (F.initialMargin theFuture) <> F.tokenFor Long accounts))
+        (void (initContract >> joinFuture))
 
-    , checkPredicate @FutureSchema "can increase margin"
-        (F.futureContract theFuture)
+    , checkPredicate defaultCheckOptions "can increase margin"
+        -- (F.futureContract theFuture)
         (assertAccountBalance (ftoShort accounts) (== (Ada.lovelaceValueOf 1936))
-        /\ assertAccountBalance (ftoLong accounts) (== (Ada.lovelaceValueOf 2410)))
-        ( initContract
-        >> joinFuture
-        >> addBlocks 20
-        >> increaseMargin
-        >> addBlocksUntil 100
-        >> payOut)
+        .&&. assertAccountBalance (ftoLong accounts) (== (Ada.lovelaceValueOf 2410)))
+        $ do
+            hdl1 <- initContract
+            hdl2 <- joinFuture
+            Trace.waitNSlots 20
+            increaseMargin hdl2
+            Trace.waitUntilSlot 100
+            payOut hdl2
 
-    , checkPredicate @FutureSchema "can settle early"
-        (F.futureContract theFuture)
+    , checkPredicate defaultCheckOptions "can settle early"
+        -- (F.futureContract theFuture)
         (assertAccountBalance (ftoShort accounts) (== (Ada.lovelaceValueOf 0))
-        /\ assertAccountBalance (ftoLong accounts) (== (Ada.lovelaceValueOf 4246)))
-        ( initContract
-        >> joinFuture
-        >> addBlocks 20
-        >> settleEarly)
+        .&&. assertAccountBalance (ftoLong accounts) (== (Ada.lovelaceValueOf 4246)))
+        $ do
+            _ <- initContract
+            hdl2 <- joinFuture
+            Trace.waitNSlots 20
+            settleEarly hdl2
 
-     , checkPredicate @FutureSchema "can pay out"
-        (F.futureContract theFuture)
+     , checkPredicate defaultCheckOptions "can pay out"
+        -- (F.futureContract theFuture)
         (assertAccountBalance (ftoShort accounts) (== (Ada.lovelaceValueOf 1936))
-        /\ assertAccountBalance (ftoLong accounts) (== (Ada.lovelaceValueOf 2310)))
-        ( initContract
-        >> joinFuture
-        >> addBlocksUntil 100
-        >> payOut)
+        .&&. assertAccountBalance (ftoLong accounts) (== (Ada.lovelaceValueOf 2310)))
+        $ do
+            _ <- initContract
+            hdl2 <- joinFuture
+            Trace.waitUntilSlot 100
+            payOut hdl2
 
     , Lib.goldenPir "test/Spec/future.pir" $$(PlutusTx.compile [|| F.futureStateMachine ||])
 
@@ -84,7 +96,7 @@ tests =
 setup :: FutureSetup
 setup =
     FutureSetup
-        { shortPK = walletPubKey (Wallet 1)
+        { shortPK = walletPubKey w1
         , longPK = walletPubKey (Wallet 2)
         , contractStart = 15
         }
@@ -109,41 +121,31 @@ theFuture = Future {
 
 -- | After this trace, the initial margin of wallet 1, and the two tokens,
 --   are locked by the contract.
-initContract :: ContractTrace FutureSchema FutureError a ()
+initContract :: EmulatorTrace (ContractHandle FutureSchema FutureError)
 initContract = do
-    callEndpoint @"initialise-future" (Wallet 1) (setup, Short)
-    handleBlockchainEvents (Wallet 1)
-    addBlocks 1
-    handleBlockchainEvents (Wallet 1)
-    addBlocks 1
-    handleBlockchainEvents (Wallet 1)
-    addBlocks 1
-    handleBlockchainEvents (Wallet 1)
+    hdl1 <- Trace.activateContractWallet w1 (F.futureContract theFuture)
+    Trace.callEndpoint @"initialise-future" w1 hdl1 (setup, Short)
+    Trace.waitNSlots 3
+    pure hdl1
 
 -- | Calls the "join-future" endpoint for wallet 2 and processes
 --   all resulting transactions.
-joinFuture :: ContractTrace FutureSchema FutureError a ()
+joinFuture :: EmulatorTrace (ContractHandle FutureSchema FutureError)
 joinFuture = do
-    callEndpoint @"join-future" (Wallet 2) (accounts, setup)
-    handleBlockchainEvents (Wallet 2)
-    addBlocks 1
-    handleBlockchainEvents (Wallet 1)
-    handleBlockchainEvents (Wallet 2)
-    addBlocks 1
-    handleBlockchainEvents (Wallet 1)
-    handleBlockchainEvents (Wallet 2)
+    hdl2 <- Trace.activateContractWallet w2 (F.futureContract theFuture)
+    Trace.callEndpoint @"join-future" w2 hdl2 (accounts, setup)
+    Trace.waitNSlots 2
+    pure hdl2
 
 -- | Calls the "settle-future" endpoint for wallet 2 and processes
 --   all resulting transactions.
-payOut :: ContractTrace FutureSchema FutureError a ()
-payOut = do
+payOut :: ContractHandle FutureSchema FutureError -> EmulatorTrace ()
+payOut hdl = do
     let
         spotPrice = Ada.lovelaceValueOf 1124
         ov = mkSignedMessage (ftDeliveryDate theFuture) spotPrice
-    callEndpoint @"settle-future" (Wallet 2) ov
-    handleBlockchainEvents (Wallet 2)
-    addBlocks 2
-    handleBlockchainEvents (Wallet 2)
+    Trace.callEndpoint @"settle-future" w2 hdl ov
+    void $ Trace.waitNSlots 2
 
 -- | Margin penalty
 penalty :: Value
@@ -164,27 +166,31 @@ oracleKeys =
 
 accounts :: FutureAccounts
 accounts =
-    either error id
-        $ evalTrace @FutureSchema @FutureError
-            F.setupTokens
-            (handleBlockchainEvents w1 >> addBlocks 1 >> handleBlockchainEvents w1 >> addBlocks 1 >> handleBlockchainEvents w1 ) w1
+    let con = F.setupTokens @FutureSchema @FutureError
+        fld = Folds.instanceOutcome con (Trace.walletInstanceTag w1)
+        trace = Trace.activateContractWallet w1 (void con) >> Trace.waitNSlots 2
+        getOutcome (Done a) = a
+        getOutcome _        = error "not finished"
+    in
+    either (error . show) (getOutcome . S.fst')
+        $ run
+        $ runError @Folds.EmulatorFoldErr
+        $ foldEmulatorStreamM fld
+        $ takeUntilSlot 10
+        $ Trace.runEmulatorStream Trace.defaultEmulatorConfig trace
 
-increaseMargin :: ContractTrace FutureSchema FutureError a ()
-increaseMargin = do
-    callEndpoint @"increase-margin" (Wallet 2) (Ada.lovelaceValueOf 100, Long)
-    addBlocks 1
-    handleBlockchainEvents (Wallet 2)
-    addBlocks 1
-    handleBlockchainEvents (Wallet 2)
+increaseMargin :: ContractHandle FutureSchema FutureError -> EmulatorTrace ()
+increaseMargin hdl = do
+    Trace.callEndpoint @"increase-margin" w2 hdl (Ada.lovelaceValueOf 100, Long)
+    void $ Trace.waitNSlots 2
 
-settleEarly :: ContractTrace FutureSchema FutureError a ()
-settleEarly = do
+settleEarly :: ContractHandle FutureSchema FutureError -> EmulatorTrace ()
+settleEarly hdl = do
     let
         spotPrice = Ada.lovelaceValueOf 11240
         ov = mkSignedMessage (Ledger.Slot 25) spotPrice
-    callEndpoint @"settle-early" (Wallet 2) ov
-    handleBlockchainEvents (Wallet 2)
-    addBlocks 1
+    Trace.callEndpoint @"settle-early" w2 hdl ov
+    void $ Trace.waitNSlots 1
 
 mkSignedMessage :: Slot -> Value -> SignedMessage (Observation Value)
 mkSignedMessage sl vl = Oracle.signObservation sl vl (fst oracleKeys)

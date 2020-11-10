@@ -31,6 +31,7 @@ module Plutus.Trace.Emulator.Types(
     , activateContractWallet
     , callEndpoint
     , payToWallet
+    , setSigningProcess
     , waitUntilSlot
     , waitNSlots
     , agentState
@@ -148,6 +149,9 @@ activateContract wallet contract = send @(Trace Emulator) . RunLocal wallet . Ac
 
 activateContractWallet :: forall s e. (HasBlockchainActions s, ContractConstraints s) => Wallet -> Contract s e () -> EmulatorTrace (ContractHandle s e)
 activateContractWallet w contract = activateContract w contract (walletInstanceTag w)
+
+setSigningProcess :: Wallet -> SigningProcess -> EmulatorTrace ()
+setSigningProcess wallet = send @(Trace Emulator) . RunLocal wallet . SetSigningProcess
 
 callEndpoint :: forall l ep s e. (ContractConstraints s, HasEndpoint l ep s) => Wallet -> ContractHandle s e -> ep -> EmulatorTrace ()
 callEndpoint wallet hdl = send @(Trace Emulator) . RunLocal wallet . CallEndpointEm (Proxy @l) hdl

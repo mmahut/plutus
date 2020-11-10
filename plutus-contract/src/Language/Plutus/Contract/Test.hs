@@ -51,13 +51,13 @@ module Language.Plutus.Contract.Test(
     ) where
 
 import Control.Applicative (liftA2)
-import           Control.Lens                                    (at, (^.), filtered, preview, makeLenses)
+import           Control.Lens                                    (at, (^.), makeLenses)
 import           Control.Monad                                   (guard, unless)
 import Control.Foldl (FoldM)
 import qualified Control.Foldl as L
 import           Control.Monad.Freer                             (Eff, runM, sendM, reinterpret)
 import Control.Monad.Freer.Error (Error, runError)
-import           Control.Monad.Freer.Log                         (LogMessage (..), LogLevel(..), logMessageContent)
+import           Control.Monad.Freer.Log                         (LogMessage (..), LogLevel(..))
 import Ledger.Tx (Tx)
 import Control.Monad.Freer.Reader
 import Control.Monad.Freer.Writer (Writer(..), tell)
@@ -94,8 +94,6 @@ import           Ledger.Index                                    (ValidationErro
 import           Ledger.Slot                                     (Slot)
 import           Ledger.Value                                    (Value)
 import           Wallet.Emulator                                 (EmulatorEvent)
-import Wallet.Emulator.MultiAgent (eteEvent, chainEvent)
-import Wallet.Emulator.Chain (_SlotAdd)
 
 import           Language.Plutus.Contract.Schema                 (Event (..), Handlers (..), Input, Output)
 import           Language.Plutus.Contract.Trace                  as X
@@ -105,7 +103,7 @@ import           Plutus.Trace.Emulator                           (runEmulatorStr
 import qualified Wallet.Emulator.Folds as Folds
 import Wallet.Emulator.Folds (EmulatorFoldErr, postMapM, Outcome(..))
 import Plutus.Trace.Emulator.Types (ContractInstanceTag, ContractConstraints, ContractInstanceLog)
-import Wallet.Emulator.Stream (takeUntilSlot, foldEmulatorStreamM)
+import Wallet.Emulator.Stream (takeUntilSlot, foldEmulatorStreamM, filterLogLevel)
 import qualified Streaming.Prelude as S
 import qualified Streaming as S
 
@@ -152,8 +150,6 @@ checkPredicate CheckOptions{_minLogLevel, _maxSlot} nm predicate action = HUnit.
         action' = waitNSlots 1 >> action
         theStream :: forall effs. S.Stream (S.Of (LogMessage EmulatorEvent)) (Eff effs) ()
         theStream = takeUntilSlot _maxSlot $ runEmulatorStream cfg action'
-        -- theFold :: FoldM (Eff TestEffects) (LogMessage EmulatorEvent) Bool
-        -- theFold = L.premapM (pure . _logMessageContent) predicate
         consumeStream :: forall a. S.Stream (S.Of (LogMessage EmulatorEvent)) (Eff TestEffects) a -> Eff TestEffects (S.Of Bool a)
         consumeStream = foldEmulatorStreamM @TestEffects predicate
     result <- runM
@@ -168,7 +164,7 @@ checkPredicate CheckOptions{_minLogLevel, _maxSlot} nm predicate action = HUnit.
         S.mapM_ step
             $ S.hoist runM
             $ S.map (Text.unpack . renderStrict . layoutPretty defaultLayoutOptions . pretty)
-            $ S.mapMaybe (preview (filtered (\LogMessage{_logLevel} -> _minLogLevel <= _logLevel)))
+            $ filterLogLevel _minLogLevel
             theStream
 
         case result of
@@ -439,7 +435,7 @@ walletFundsChange w dlt =
                 , "but they changed by", viaShow (finalValue P.- initialValue)]
         pure result
 
--- | Assert that at least one transaction failed to validated, and that all
+-- | Assert that at least one transaction failed to validate, and that all
 --   transactions that failed meet the predicate.
 assertFailedTransaction :: (Tx -> ValidationError -> Bool) -> TracePredicate
 assertFailedTransaction predicate =
