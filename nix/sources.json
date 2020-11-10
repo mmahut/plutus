@@ -109,16 +109,16 @@
         "url_template": "https://nodejs.org/download/release/<rev>/node-<rev>-headers.tar.gz"
     },
     "pre-commit-hooks.nix": {
-        "branch": "master",
+        "branch": "fix-purty",
         "builtin": false,
         "description": "Seamless integration of https://pre-commit.com git hooks with Nix.",
         "homepage": "",
-        "owner": "cachix",
+        "owner": "gilligan",
         "repo": "pre-commit-hooks.nix",
-        "rev": "d3c52b5fe6873f4cd8b0c518fc704bfaded5bf10",
-        "sha256": "0ysnc8pyhxxjxgfn2kcnn7zf3q233g0sia1ama1n4xf3d0ljjjya",
+        "rev": "b556eaad1c8275e4e2a25cd2cee08c9cce1dabb9",
+        "sha256": "158b0pc38kvgx1lzsc9z72qwa98808czf6jxn4hn1qzdz473k1yv",
         "type": "tarball",
-        "url": "https://github.com/cachix/pre-commit-hooks.nix/archive/d3c52b5fe6873f4cd8b0c518fc704bfaded5bf10.tar.gz",
+        "url": "https://github.com/gilligan/pre-commit-hooks.nix/archive/b556eaad1c8275e4e2a25cd2cee08c9cce1dabb9.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "sphinxcontrib-haddock": {
